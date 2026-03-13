@@ -1,14 +1,19 @@
 # Environment
 .env
+backend/.env
 
 # Claude
-.claude
+.claude/
 
 # Python
 __pycache__/
 *.py[cod]
 *.pyo
 venv/
+
+# Media files
+*.mp3
+*.mp4
 
 # Downloads
 downloads/

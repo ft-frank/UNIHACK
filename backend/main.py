@@ -3,7 +3,10 @@ import uuid
 import yt_dlp
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from dotenv import load_dotenv
 import assemblyai as aai
+
+load_dotenv()
 
 app = FastAPI()
 
@@ -11,7 +14,7 @@ DOWNLOADS_DIR = "downloads"
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 YOUTUBE_URL = "https://www.youtube.com/watch?v=-jYfC4YYXIw"
-aai.settings.api_key = "1de991989ccd4809a9d6acb1ab71f22f"
+aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
 
 
 class DownloadResponse(BaseModel):
