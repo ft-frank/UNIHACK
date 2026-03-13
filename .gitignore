@@ -1,0 +1,14 @@
+# Environment
+.env
+
+# Claude
+.claude
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+
+# Downloads
+downloads/
