@@ -1,10 +1,12 @@
 import os
+import json
 import uuid
 import yt_dlp
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import assemblyai as aai
+import anthropic
 
 load_dotenv()
 
@@ -15,6 +17,7 @@ os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
 YOUTUBE_URL = "https://www.youtube.com/watch?v=-jYfC4YYXIw"
 aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
+anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 
 class DownloadResponse(BaseModel):
@@ -42,6 +45,54 @@ def transcribe(audio_file):
             for word in transcript.words
         ],
     }
+
+
+def extract_difficult_words(transcript_data: dict) -> list:
+    words = transcript_data["words"]
+    transcript_text = transcript_data["text"]
+
+    words_with_timestamps = json.dumps([
+        {"word": w["text"], "start_ms": w["start"], "end_ms": w["end"]}
+        for w in words
+    ])
+
+    prompt = f"""You are a language and phonetics expert. Given a transcript and its word-level timestamps, identify the 20 most phonetically difficult words for a non-native English speaker to pronounce.
+
+Phonetically difficult words include those with:
+- Unusual or irregular pronunciation patterns
+- Silent letters
+- Uncommon vowel combinations
+- Difficult consonant clusters
+- Stress patterns that differ from spelling expectations
+
+Transcript:
+{transcript_text}
+
+Words with timestamps (milliseconds):
+{words_with_timestamps}
+
+Return ONLY a JSON array of exactly 20 objects. Each object must have:
+- "word": the word as it appears in the transcript
+- "start_ms": the start timestamp in milliseconds
+- "end_ms": the end timestamp in milliseconds
+
+Return only the JSON array, no explanation."""
+
+    message = anthropic_client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    response_text = message.content[0].text.strip()
+    # Strip markdown code fences if present
+    if response_text.startswith("```"):
+        response_text = response_text.split("```")[1]
+        if response_text.startswith("json"):
+            response_text = response_text[4:]
+        response_text = response_text.strip()
+
+    return json.loads(response_text)
 
 
 @app.get("/")
@@ -87,7 +138,9 @@ def download():
 
     mp3_filename = mp3_file.get("path", "")
 
-    return transcribe(mp3_filename)
+    transcript_data = transcribe(mp3_filename)
+    difficult_words = extract_difficult_words(transcript_data)
+    return {"difficult_words": difficult_words}
 
 
 @app.get("/health")
