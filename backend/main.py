@@ -30,7 +30,18 @@ def transcribe(audio_file):
     if transcript.status == "error":
         raise RuntimeError(f"Transcription failed: {transcript.error}")
 
-    return transcript.text
+    return {
+        "text": transcript.text,
+        "words": [
+            {
+                "text": word.text,
+                "start": word.start,
+                "end": word.end,
+                "confidence": word.confidence,
+            }
+            for word in transcript.words
+        ],
+    }
 
 
 @app.get("/")
