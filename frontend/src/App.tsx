@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Question } from "./questions";
 import { fetchQuestionsForVideo } from "./questions";
-
+import Settings, { type UserSettings } from "./components/settings"; // ✅ Happy TypeScript
 declare global {
   interface Window { YT: any; onYouTubeIframeAPIReady: any; }
 }
@@ -13,6 +13,15 @@ export default function App() {
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [score, setScore] = useState(0);
+
+  // --- NEW: Settings State ---
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<UserSettings>({
+    difficulty: "Beginner",
+    frequency: "3-5",
+    specificGroups: "",
+    specificSounds: "",
+  });
 
   const playerRef = useRef<any>(null);
   const intervalRef = useRef<number | null>(null);
@@ -74,6 +83,9 @@ export default function App() {
 
   const handleLoadVideo = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // In the future, you can pass your `settings` state to this fetch function!
+    // Example: fetchQuestionsForVideo(urlInput, settings);
     const fetchedData = await fetchQuestionsForVideo(urlInput);
     questionsRef.current = fetchedData;
     
@@ -106,10 +118,26 @@ export default function App() {
   return (
     <div className="min-h-screen bg-white text-slate-800 font-sans">
       
+      {/* Settings Modal */}
+      <Settings 
+        isOpen={isSettingsOpen} 
+        onClose={() => setIsSettingsOpen(false)} 
+        currentSettings={settings}
+        onSave={(newSettings) => {
+          setSettings(newSettings);
+          console.log("Saved new settings:", newSettings);
+        }}
+      />
+
       {/* HEADER */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
         <h1 className="text-xl font-bold text-slate-800">YouTube Interactive Quiz</h1>
-        <button className="p-2 text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
+        
+        {/* Gear Icon - Now opens the modal! */}
+        <button 
+          onClick={() => setIsSettingsOpen(true)}
+          className="p-2 text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+        >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
             <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
@@ -135,14 +163,14 @@ export default function App() {
         </form>
       </div>
 
-      {/* MAIN CONTENT GRID - Switched to 12 columns for perfect proportions */}
+      {/* MAIN CONTENT GRID */}
       <main className="max-w-[1600px] mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
-        {/* LEFT COLUMN (Video) - Takes up 8 of 12 columns */}
+        {/* LEFT COLUMN (Video) */}
         <div className="lg:col-span-8 flex flex-col">
           {videoId ? (
-            <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-sm border border-gray-200">
-              <div id="yt-player" />
+            <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-sm border border-gray-200 z-0 relative">
+              <div id="yt-player" className="absolute inset-0" />
             </div>
           ) : (
             <div className="w-full aspect-video bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center">
@@ -152,9 +180,8 @@ export default function App() {
           <p className="text-sm text-gray-500 mt-4 font-medium">Pause the video to reveal quiz questions</p>
         </div>
 
-        {/* RIGHT COLUMN (Quiz) - Takes up 4 of 12 columns */}
+        {/* RIGHT COLUMN (Quiz) */}
         <div className="lg:col-span-4 flex flex-col w-full">
-          {/* Quiz Header */}
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[1.15rem] font-bold text-slate-800">Quiz</h2>
             <span className="text-sm text-gray-500 font-medium">
@@ -162,7 +189,6 @@ export default function App() {
             </span>
           </div>
 
-          {/* Quiz Box */}
           <div className="border border-gray-200 rounded-xl bg-slate-50/50 p-8 flex flex-col justify-center min-h-[160px]">
             {currentQuestion ? (
               <div className="flex flex-col">
