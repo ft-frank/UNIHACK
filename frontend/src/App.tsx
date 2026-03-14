@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { Question } from "./questions";
 import { fetchQuestionsForVideo } from "./questions";
-import Settings, { type UserSettings } from "./components/settings"; // ✅ Happy TypeScript
+import Settings, { type UserSettings } from "./components/settings";
+
 declare global {
   interface Window { YT: any; onYouTubeIframeAPIReady: any; }
 }
@@ -14,7 +15,6 @@ export default function App() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [score, setScore] = useState(0);
 
-  // --- NEW: Settings State ---
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<UserSettings>({
     difficulty: "Beginner",
@@ -84,9 +84,8 @@ export default function App() {
   const handleLoadVideo = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // In the future, you can pass your `settings` state to this fetch function!
-    // Example: fetchQuestionsForVideo(urlInput, settings);
-    const fetchedData = await fetchQuestionsForVideo(urlInput);
+    // 💥 THE FIX: Pass `settings` as the second argument here!
+    const fetchedData = await fetchQuestionsForVideo(urlInput, settings);
     questionsRef.current = fetchedData;
     
     const match = urlInput.match(/v=([a-zA-Z0-9_-]{11})/);
@@ -118,22 +117,18 @@ export default function App() {
   return (
     <div className="min-h-screen bg-white text-slate-800 font-sans">
       
-      {/* Settings Modal */}
       <Settings 
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)} 
         currentSettings={settings}
         onSave={(newSettings) => {
           setSettings(newSettings);
-          console.log("Saved new settings:", newSettings);
         }}
       />
 
-      {/* HEADER */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
         <h1 className="text-xl font-bold text-slate-800">YouTube Interactive Quiz</h1>
         
-        {/* Gear Icon - Now opens the modal! */}
         <button 
           onClick={() => setIsSettingsOpen(true)}
           className="p-2 text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
@@ -145,7 +140,6 @@ export default function App() {
         </button>
       </header>
 
-      {/* INPUT BAR */}
       <div className="bg-[#f9fafb] px-6 py-4 border-b border-gray-100">
         <form onSubmit={handleLoadVideo} className="flex gap-4 items-center">
           <input
@@ -163,10 +157,8 @@ export default function App() {
         </form>
       </div>
 
-      {/* MAIN CONTENT GRID */}
       <main className="max-w-[1600px] mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
-        {/* LEFT COLUMN (Video) */}
         <div className="lg:col-span-8 flex flex-col">
           {videoId ? (
             <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-sm border border-gray-200 z-0 relative">
@@ -180,7 +172,6 @@ export default function App() {
           <p className="text-sm text-gray-500 mt-4 font-medium">Pause the video to reveal quiz questions</p>
         </div>
 
-        {/* RIGHT COLUMN (Quiz) */}
         <div className="lg:col-span-4 flex flex-col w-full">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-[1.15rem] font-bold text-slate-800">Quiz</h2>
@@ -227,7 +218,6 @@ export default function App() {
             )}
           </div>
         </div>
-
       </main>
     </div>
   );
