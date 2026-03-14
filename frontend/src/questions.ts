@@ -1,4 +1,5 @@
 // questions.ts
+import type { UserSettings } from "./components/settings";
 
 export type Question = {
   timestamp: number;
@@ -7,11 +8,18 @@ export type Question = {
   answerIndex: number;
 };
 
-export const fetchQuestionsForVideo = async (youtubeUrl: string): Promise<Question[]> => {
+export const fetchQuestionsForVideo = async (
+  youtubeUrl: string, 
+  settings: UserSettings
+): Promise<Question[]> => {
   const response = await fetch("http://localhost:8000/questions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: youtubeUrl }),
+    // We spread the settings object here so the backend gets everything
+    body: JSON.stringify({ 
+      url: youtubeUrl, 
+      ...settings 
+    }),
   });
 
   if (!response.ok) {

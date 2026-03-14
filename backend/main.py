@@ -30,6 +30,10 @@ anthropic_client = anthropic.Anthropic()
 
 class QuestionRequest(BaseModel):
     url: str
+    difficulty: str = "Beginner"
+    frequency: str = "3-5"
+    specificGroups: str = ""
+    specificSounds: str = ""
 
 
 def download_audio(url: str) -> str:
@@ -74,7 +78,7 @@ def transcribe(audio_file: str):
     return transcript
 
 
-def generate_questions(transcript) -> list:
+def generate_questions(transcript, difficulty: str = "Beginner", frequency: str = "3-5", specific_groups: str = "", specific_sounds: str = "") -> list:
     # Build a condensed transcript with timestamps for Claude
     lines = []
     if transcript.utterances:
@@ -93,17 +97,27 @@ def generate_questions(transcript) -> list:
 
     timed_transcript = "\n".join(lines)
 
+    num_questions = frequency.split("-")[1] if "-" in frequency else "5"
+    extra_instructions = []
+    if specific_groups:
+        extra_instructions.append(f"- Focus questions on the phonetic group: {specific_groups}")
+    if specific_sounds:
+        extra_instructions.append(f"- Focus questions on the specific sound: {specific_sounds}")
+    extra = "\n".join(extra_instructions)
+
     prompt = f"""You are generating quiz questions for an interactive video player.
 
 Given this transcript (with timestamps in seconds):
 
 {timed_transcript}
 
-Generate 5 multiple-choice questions spread throughout the video. Each question should:
+Generate {num_questions} multiple-choice questions spread throughout the video. Each question should:
+- Be appropriate for a {difficulty} level learner
 - Test comprehension of something mentioned in the transcript
 - Have exactly 4 answer choices (a, b, c, d)
 - Have one correct answer
 - Use a timestamp (in seconds) that is AFTER the relevant content was spoken
+{extra}
 
 Return ONLY a JSON array with this exact structure, no other text:
 [
@@ -149,7 +163,7 @@ def get_questions(req: QuestionRequest):
             os.remove(audio_path)
 
     try:
-        questions = generate_questions(transcript)
+        questions = generate_questions(transcript, req.difficulty, req.frequency, req.specificGroups, req.specificSounds)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Question generation failed: {e}")
 
