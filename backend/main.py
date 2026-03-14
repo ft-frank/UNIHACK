@@ -169,19 +169,14 @@ def get_question_results(video_id: str) -> List[QuestionResult]:
 
 def download_audio(url: str) -> str:
     output_path = os.path.join(DOWNLOADS_DIR, f"{uuid.uuid4()}.%(ext)s")
-    mp3_file = {}
+    downloaded_file: dict[str, str] = {}
 
     def hook(d):
         if d["status"] == "finished":
-            mp3_file["path"] = d["info_dict"].get("filepath", d["info_dict"].get("_filename", ""))
+            downloaded_file["path"] = d["info_dict"].get("filepath", d["info_dict"].get("_filename", ""))
 
     opts = {
         'format': 'bestaudio/best',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
         'outtmpl': output_path,
         'quiet': True,
         'postprocessor_hooks': [hook],
@@ -190,7 +185,7 @@ def download_audio(url: str) -> str:
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
 
-    path = mp3_file.get("path", "")
+    path = downloaded_file.get("path", "")
     if not path or not os.path.exists(path):
         raise RuntimeError("Audio download failed")
     return path
