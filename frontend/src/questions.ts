@@ -12,7 +12,8 @@ export const fetchQuestionsForVideo = async (
   youtubeUrl: string, 
   settings: UserSettings
 ): Promise<Question[]> => {
-  const response = await fetch("http://localhost:8000/questions", {
+  const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+  const response = await fetch(`${apiBase}/questions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     // We spread the settings object here so the backend gets everything
