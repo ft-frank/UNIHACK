@@ -8,10 +8,17 @@ export type Question = {
 };
 
 export const fetchQuestionsForVideo = async (youtubeUrl: string): Promise<Question[]> => {
-  //  FUTURE FETCH LOGIC 
+  const response = await fetch("http://localhost:8000/questions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: youtubeUrl }),
+  });
 
-  return [
-    { timestamp: 3, question: "Are we winning a prize?", choices: ["yes", "no", "maybe"], answerIndex: 0 },
-    { timestamp: 6, question: "What is 2 + 2?", choices: ["3", "4", "5"], answerIndex: 1 },
-  ];
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ detail: "Unknown error" }));
+    throw new Error(err.detail ?? "Failed to fetch questions");
+  }
+
+  const data: Question[] = await response.json();
+  return data;
 };

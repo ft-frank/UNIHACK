@@ -81,6 +81,7 @@ export default function App() {
     
     // FETCH DATA FIRST: Call your external function with the URL
     const fetchedData = await fetchQuestionsForVideo(urlInput);
+    console.log("Questions from /questions:", fetchedData);
     questionsRef.current = fetchedData;
     
     // THEN SET UP VIDEO: Parse the ID and trigger the player
