@@ -1,18 +1,24 @@
 import os
 import json
 import uuid
+import shutil
+import logging
 from threading import Lock, Thread
 from typing import Any, List, Optional
 from datetime import datetime
 from pathlib import Path
 
 import yt_dlp
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Header
 from pydantic import BaseModel
 import assemblyai as aai
 import anthropic
+import requests
 
 from fastapi.middleware.cors import CORSMiddleware
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -31,20 +37,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DOWNLOADS_DIR = "downloads"
-os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+BASE_DIR = Path(__file__).resolve().parent
+DOWNLOADS_PATH = BASE_DIR / "downloads"
+DOWNLOADS_PATH.mkdir(parents=True, exist_ok=True)
+DOWNLOADS_DIR = str(DOWNLOADS_PATH)
 
 from dotenv import load_dotenv
 load_dotenv()
 aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
 anthropic_client = anthropic.Anthropic()
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 
 class QuestionRequest(BaseModel):
     url: str
-    type: str = "Lecture"
+    type: str = "Cochlear"
     difficulty: str = "Beginner"
     frequency: str = "3-5"
+    cochlearAssessmentMode: str = "multiple-choice"
     specificGroups: str = ""
     specificSounds: str = ""
 
@@ -61,8 +73,38 @@ class QuestionResult(BaseModel):
     videoId: str
     timestamp: int
     correct: bool
+    questionText: Optional[str] = None
+    selectedAnswer: Optional[str] = None
+    correctAnswer: Optional[str] = None
     word: Optional[str] = None
     phoneticCategory: Optional[str] = None
+
+
+class VideoScoreRecord(BaseModel):
+    id: str
+    videoId: str
+    videoName: str
+    completedAt: str
+    score: int
+    totalQuestions: int
+    percentage: int
+
+
+class ProfileUpdateRequest(BaseModel):
+    username: Optional[str] = None
+    theme: Optional[str] = None
+    settings: Optional[dict[str, Any]] = None
+
+
+class UploadQuestionRequest(BaseModel):
+    filename: str
+    mediaId: str
+    type: str = "Cochlear"
+    difficulty: str = "Beginner"
+    frequency: str = "3-5"
+    cochlearAssessmentMode: str = "multiple-choice"
+    specificGroups: str = ""
+    specificSounds: str = ""
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -70,6 +112,73 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 jobs_lock = Lock()
 jobs: dict[str, dict[str, Any]] = {}
+
+
+def ensure_supabase_config() -> None:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+        )
+
+
+def supabase_admin_request(
+    method: str,
+    path: str,
+    *,
+    params: Optional[dict[str, Any]] = None,
+    json_body: Optional[Any] = None,
+) -> Any:
+    ensure_supabase_config()
+    response = requests.request(
+        method,
+        f"{SUPABASE_URL}{path}",
+        headers={
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": "application/json",
+        },
+        params=params,
+        json=json_body,
+        timeout=20,
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=500, detail=response.text)
+
+    if not response.text:
+        return None
+
+    return response.json()
+
+
+def get_authenticated_user(authorization: Optional[str]) -> dict[str, Any]:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing authorization token")
+
+    token = authorization.split(" ", 1)[1].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Invalid authorization token")
+
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase auth is not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY.",
+        )
+
+    response = requests.get(
+        f"{SUPABASE_URL}/auth/v1/user",
+        headers={
+            "apikey": SUPABASE_ANON_KEY,
+            "Authorization": f"Bearer {token}",
+        },
+        timeout=20,
+    )
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=401, detail="Authentication failed")
+
+    return response.json()
 
 
 def update_job(job_id: str, **fields: Any) -> None:
@@ -87,62 +196,77 @@ def get_job(job_id: str) -> dict[str, Any]:
 
 
 # Data storage functions
-def get_user_progress(user_id: str = "default_user") -> UserProgress:
-    """Load user progress from file"""
-    progress_file = Path(DATA_DIR) / f"{user_id}_progress.json"
-    if progress_file.exists():
-        try:
-            with open(progress_file, 'r') as f:
-                data = json.load(f)
-                return UserProgress(**data)
-        except Exception:
-            pass
+def get_user_progress(user_id: str) -> UserProgress:
+    data = supabase_admin_request(
+        "GET",
+        "/rest/v1/user_progress",
+        params={
+            "user_id": f"eq.{user_id}",
+            "select": "*",
+            "limit": 1,
+        },
+    )
+
+    if data:
+        return UserProgress(
+            userId=user_id,
+            totalQuestions=data[0].get("total_questions", 0),
+            correctAnswers=data[0].get("correct_answers", 0),
+            phoneticErrors=data[0].get("phonetic_errors", {}) or {},
+            wordErrors=data[0].get("word_errors", {}) or {},
+            proficiencyLevel=data[0].get("proficiency_level", "Beginner"),
+            lastUpdated=data[0].get("last_updated", "") or "",
+        )
+
     return UserProgress(userId=user_id)
 
 
 def save_user_progress(progress: UserProgress):
-    """Save user progress to file"""
-    progress_file = Path(DATA_DIR) / f"{progress.userId}_progress.json"
     progress.lastUpdated = datetime.now().isoformat()
-    with open(progress_file, 'w') as f:
-        json.dump(progress.dict(), f, indent=2)
+    supabase_admin_request(
+        "POST",
+        "/rest/v1/user_progress",
+        params={"on_conflict": "user_id"},
+        json_body={
+            "user_id": progress.userId,
+            "total_questions": progress.totalQuestions,
+            "correct_answers": progress.correctAnswers,
+            "phonetic_errors": progress.phoneticErrors,
+            "word_errors": progress.wordErrors,
+            "proficiency_level": progress.proficiencyLevel,
+            "last_updated": progress.lastUpdated,
+        },
+    )
 
 
-def save_question_result(result: QuestionResult):
-    """Save a question result and update user progress"""
-    results_file = Path(DATA_DIR) / f"{result.videoId}_results.json"
-    
-    # Load existing results
-    results = []
-    if results_file.exists():
-        try:
-            with open(results_file, 'r') as f:
-                results = json.load(f)
-        except Exception:
-            results = []
-    
-    # Add new result
-    results.append(result.dict())
-    
-    # Save results
-    with open(results_file, 'w') as f:
-        json.dump(results, f, indent=2)
-    
-    # Update user progress
-    progress = get_user_progress()
+def save_question_result(user_id: str, result: QuestionResult):
+    supabase_admin_request(
+        "POST",
+        "/rest/v1/question_results",
+        json_body={
+            "user_id": user_id,
+            "video_id": result.videoId,
+            "timestamp": result.timestamp,
+            "correct": result.correct,
+            "question_text": result.questionText,
+            "selected_answer": result.selectedAnswer,
+            "correct_answer": result.correctAnswer,
+            "word": result.word,
+            "phonetic_category": result.phoneticCategory,
+        },
+    )
+
+    progress = get_user_progress(user_id)
     progress.totalQuestions += 1
     if result.correct:
         progress.correctAnswers += 1
-    
-    # Track phonetic errors
+
     if not result.correct and result.phoneticCategory:
         progress.phoneticErrors[result.phoneticCategory] = progress.phoneticErrors.get(result.phoneticCategory, 0) + 1
-    
-    # Track word errors
+
     if not result.correct and result.word:
         progress.wordErrors[result.word] = progress.wordErrors.get(result.word, 0) + 1
-    
-    # Update proficiency level
+
     accuracy = progress.correctAnswers / progress.totalQuestions if progress.totalQuestions > 0 else 0
     if accuracy >= 0.8:
         progress.proficiencyLevel = "Advanced"
@@ -150,45 +274,216 @@ def save_question_result(result: QuestionResult):
         progress.proficiencyLevel = "Intermediate"
     else:
         progress.proficiencyLevel = "Beginner"
-    
+
     save_user_progress(progress)
 
 
-def get_question_results(video_id: str) -> List[QuestionResult]:
-    """Get all question results for a video"""
-    results_file = Path(DATA_DIR) / f"{video_id}_results.json"
-    if results_file.exists():
-        try:
-            with open(results_file, 'r') as f:
-                data = json.load(f)
-                return [QuestionResult(**r) for r in data]
-        except Exception:
-            pass
-    return []
+def get_question_results(user_id: str, video_id: str) -> List[QuestionResult]:
+    data = supabase_admin_request(
+        "GET",
+        "/rest/v1/question_results",
+        params={
+            "user_id": f"eq.{user_id}",
+            "video_id": f"eq.{video_id}",
+            "select": "*",
+            "order": "created_at.asc",
+        },
+    )
+
+    return [
+        QuestionResult(
+            videoId=row["video_id"],
+            timestamp=row["timestamp"],
+            correct=row["correct"],
+            questionText=row.get("question_text"),
+            selectedAnswer=row.get("selected_answer"),
+            correctAnswer=row.get("correct_answer"),
+            word=row.get("word"),
+            phoneticCategory=row.get("phonetic_category"),
+        )
+        for row in data or []
+    ]
+
+
+def list_score_history(user_id: str) -> List[VideoScoreRecord]:
+    data = supabase_admin_request(
+        "GET",
+        "/rest/v1/video_score_history",
+        params={
+            "user_id": f"eq.{user_id}",
+            "select": "*",
+            "order": "completed_at.desc",
+        },
+    )
+
+    return [
+        VideoScoreRecord(
+            id=row["id"],
+            videoId=row["video_id"],
+            videoName=row["video_name"],
+            completedAt=row["completed_at"],
+            score=row["score"],
+            totalQuestions=row["total_questions"],
+            percentage=row["percentage"],
+        )
+        for row in data or []
+    ]
+
+
+def save_score_record(user_id: str, record: VideoScoreRecord) -> List[VideoScoreRecord]:
+    supabase_admin_request(
+        "POST",
+        "/rest/v1/video_score_history",
+        json_body={
+            "id": record.id,
+            "user_id": user_id,
+            "video_id": record.videoId,
+            "video_name": record.videoName,
+            "completed_at": record.completedAt,
+            "score": record.score,
+            "total_questions": record.totalQuestions,
+            "percentage": record.percentage,
+        },
+    )
+    return list_score_history(user_id)
+
+
+def clear_score_history(user_id: str):
+    supabase_admin_request(
+        "DELETE",
+        "/rest/v1/video_score_history",
+        params={"user_id": f"eq.{user_id}"},
+    )
+    supabase_admin_request(
+        "DELETE",
+        "/rest/v1/question_results",
+        params={"user_id": f"eq.{user_id}"},
+    )
+    save_user_progress(UserProgress(userId=user_id))
+
+
+def fetch_profile_by_user_id(user_id: str) -> Optional[dict[str, Any]]:
+    data = supabase_admin_request(
+        "GET",
+        "/rest/v1/profiles",
+        params={
+            "id": f"eq.{user_id}",
+            "select": "*",
+            "limit": 1,
+        },
+    )
+
+    if data:
+        return data[0]
+    return None
+
+
+def get_profile(user: dict[str, Any]) -> dict[str, Any]:
+    user_id = user["id"]
+    existing = fetch_profile_by_user_id(user_id)
+    if existing:
+        return existing
+
+    profile = {
+        "id": user_id,
+        "email": user.get("email"),
+        "username": user.get("user_metadata", {}).get("username") or user.get("email", "friend").split("@")[0],
+        "theme": "light",
+        "settings": {
+            "type": "Cochlear",
+            "difficulty": "Beginner",
+            "frequency": "3-5",
+            "cochlearAssessmentMode": "multiple-choice",
+            "specificGroups": "",
+            "specificSounds": "",
+        },
+    }
+    supabase_admin_request(
+        "POST",
+        "/rest/v1/profiles",
+        json_body=profile,
+    )
+    return profile
+
+
+def update_profile(user_id: str, payload: ProfileUpdateRequest) -> dict[str, Any]:
+    existing = fetch_profile_by_user_id(user_id) or {
+        "id": user_id,
+        "email": None,
+        "username": "friend",
+        "theme": "light",
+        "settings": {},
+    }
+    updated = {
+        "id": user_id,
+        "email": existing.get("email"),
+        "username": payload.username if payload.username is not None else existing.get("username"),
+        "theme": payload.theme if payload.theme is not None else existing.get("theme", "light"),
+        "settings": payload.settings if payload.settings is not None else existing.get("settings", {}),
+    }
+    supabase_admin_request(
+        "POST",
+        "/rest/v1/profiles",
+        params={"on_conflict": "id"},
+        json_body=updated,
+    )
+    return updated
 
 
 def download_audio(url: str) -> str:
-    output_path = os.path.join(DOWNLOADS_DIR, f"{uuid.uuid4()}.%(ext)s")
-    downloaded_file: dict[str, str] = {}
-
-    def hook(d):
-        if d["status"] == "finished":
-            downloaded_file["path"] = d["info_dict"].get("filepath", d["info_dict"].get("_filename", ""))
-
+    output_path = str(DOWNLOADS_PATH / f"{uuid.uuid4()}.%(ext)s")
     opts = {
         'format': 'bestaudio/best',
         'outtmpl': output_path,
         'quiet': True,
-        'postprocessor_hooks': [hook],
+        'noplaylist': True,
+        'restrictfilenames': True,
     }
 
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ydl.download([url])
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=True)
 
-    path = downloaded_file.get("path", "")
-    if not path or not os.path.exists(path):
-        raise RuntimeError("Audio download failed")
-    return path
+        requested_downloads = info.get("requested_downloads") or []
+        path = (
+            requested_downloads[0].get("filepath")
+            if requested_downloads
+            else info.get("filepath")
+        )
+        if not path:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                path = ydl.prepare_filename(info)
+
+        resolved_path = Path(path).resolve()
+        if not resolved_path.exists():
+            raise RuntimeError(f"Audio download failed: file not found at {resolved_path}")
+        return str(resolved_path)
+    except Exception:
+        logger.exception("Failed to download audio for URL: %s", url)
+        raise
+
+
+def cleanup_file(file_path: str) -> None:
+    if not file_path:
+        return
+
+    try:
+        path = Path(file_path)
+        if path.exists():
+            path.unlink()
+    except OSError:
+        logger.warning("Failed to clean up temporary file: %s", file_path, exc_info=True)
+
+
+def save_uploaded_media(upload: UploadFile) -> Path:
+    suffix = Path(upload.filename or "").suffix.lower()
+    filename = f"{uuid.uuid4()}{suffix}"
+    destination = DOWNLOADS_PATH / filename
+
+    with destination.open("wb") as buffer:
+        shutil.copyfileobj(upload.file, buffer)
+
+    return destination
 
 
 def transcribe(audio_file: str):
@@ -237,14 +532,82 @@ def build_word_transcript(transcript) -> str:
     return "\n".join(lines)
 
 
-def generate_questions(transcript, quiz_type: str = "Lecture", difficulty: str = "Beginner", frequency: str = "3-5", specific_groups: str = "", specific_sounds: str = "", user_progress: Optional[UserProgress] = None) -> list:
-    num_questions = frequency.split("-")[1] if "-" in frequency else "5"
+def estimate_transcript_duration_seconds(transcript) -> int:
+    """Best-effort duration estimate from transcript metadata or final timestamps."""
+    audio_duration = getattr(transcript, "audio_duration", None)
+    if isinstance(audio_duration, (int, float)) and audio_duration > 0:
+        return max(1, int(round(audio_duration / 1000)))
+
+    words = transcript.words or []
+    if words:
+        return max(1, int(words[-1].end // 1000))
+
+    utterances = transcript.utterances or []
+    if utterances:
+        return max(1, int(utterances[-1].end // 1000))
+
+    return 300
+
+
+def calculate_question_count(frequency: str) -> int:
+    """Use the user's selected frequency directly instead of scaling by media length."""
+    frequency_to_count = {
+        "3-5": 4,
+        "5-10": 8,
+        "10-15": 12,
+    }
+
+    return frequency_to_count.get(frequency, 4)
+
+
+def calculate_blank_count(frequency: str) -> int:
+    frequency_to_blanks = {
+        "3-5": 1,
+        "5-10": 2,
+        "10-15": 3,
+    }
+
+    return frequency_to_blanks.get(frequency, 1)
+
+
+def generate_questions(
+    transcript,
+    quiz_type: str = "Cochlear",
+    difficulty: str = "Beginner",
+    frequency: str = "3-5",
+    cochlear_assessment_mode: str = "multiple-choice",
+    specific_groups: str = "",
+    specific_sounds: str = "",
+    user_progress: Optional[UserProgress] = None,
+) -> list:
+    duration_seconds = estimate_transcript_duration_seconds(transcript)
+    num_questions = calculate_question_count(frequency)
+    blank_count = calculate_blank_count(frequency)
+    duration_minutes = max(duration_seconds / 60, 1)
 
     timed_transcript = build_transcript_lines(transcript)
+    settings_summary = [
+        f"- Quiz type: {quiz_type}",
+        f"- Difficulty selected by the user: {difficulty}",
+        f"- Question density preference: {frequency}",
+        f"- Target question count from the user's frequency selection: {num_questions}",
+    ]
 
-    # Adaptive Difficulty Override
-    if user_progress and user_progress.totalQuestions >= 5:
-        difficulty = user_progress.proficiencyLevel
+    if quiz_type == "Cochlear":
+        settings_summary.append(
+            f"- Cochlear assessment mode: {cochlear_assessment_mode}"
+        )
+        if specific_groups:
+            settings_summary.append(f"- Focus phonetic group: {specific_groups}")
+        if specific_sounds:
+            settings_summary.append(f"- Focus sound: {specific_sounds}")
+
+    if user_progress:
+        settings_summary.append(
+            f"- User proficiency history for reference only: {user_progress.proficiencyLevel}"
+        )
+
+    settings_block = "\n".join(settings_summary)
 
     if quiz_type == "Cochlear":
         word_transcript = build_word_transcript(transcript)
@@ -267,6 +630,9 @@ def generate_questions(transcript, quiz_type: str = "Lecture", difficulty: str =
 Given this word-level transcript (each word has a start and end time in seconds):
 
 {word_transcript}
+
+Use these quiz settings exactly:
+{settings_block}
 
 Identify {num_questions} words in the transcript that are phonetically difficult or ambiguous — words commonly confused by people with hearing loss (e.g. minimal pairs, fricatives, vowel contrasts, words that sound similar in context).
 
@@ -295,12 +661,82 @@ Return ONLY a JSON array with this exact structure, no other text:
 }}
 ]"""
 
+        prompt = f"""You are generating hearing rehabilitation exercises for a cochlear implant or hearing-impaired patient.
+
+Given this word-level transcript (each word has a start and end time in seconds):
+
+{word_transcript}
+
+Also use this sentence-level transcript to preserve natural phrasing:
+
+{timed_transcript}
+
+Use these quiz settings exactly:
+{settings_block}
+
+Identify phonetically difficult or ambiguous listening moments - words commonly confused by people with hearing loss (for example minimal pairs, fricatives, vowel contrasts, and words that sound similar in context).
+
+You must return exactly {num_questions} questions total.
+
+Question mix rules:
+- If cochlear assessment mode is "multiple-choice", every question must be kind "multiple-choice".
+- If cochlear assessment mode is "fill-in-the-blanks", every question must be kind "fill-in-the-blanks".
+- If cochlear assessment mode is "both", return a balanced mix of both kinds across the full set.
+
+For "multiple-choice" questions:
+- Create a question where the patient must identify which word was actually said, given 4 phonetically similar choices.
+- Use the word's PAUSE_AT time as the timestamp, so the media pauses one word after the target word has been spoken.
+
+For "fill-in-the-blanks" questions:
+- Select a short sentence or utterance the speaker just said.
+- Blank out acoustically important words from that sentence.
+- Use {blank_count} blanks per sentence, unless the sentence is too short, in which case use the maximum sensible number up to {blank_count}.
+- Use markers [BLANK_1], [BLANK_2], and so on inside sentenceWithBlanks.
+- Return the original full sentence in promptSentence.
+- Return the correct missing words in order in the blanks array.
+- Use a timestamp after the sentence has been spoken.
+
+For a beginner student: atleast 1-2 syllables apart but similar sounding
+For an intermediate: same amount of syllables apart but different sounding in 2 different phonemes
+For advanced: same amount of syllables but just one phoneme apart
+
+Each question should:
+- Be appropriate for a {difficulty} level patient
+- Help train auditory discrimination
+{extra}
+
+Return ONLY a JSON array with this exact structure, no other text:
+[
+{{
+    "kind": "multiple-choice",
+    "timestamp": <pause_at time integer seconds>,
+    "question": "Which word did the speaker say?",
+    "choices": ["<actual word>", "<similar word>", "<similar word>", "<similar word>"],
+    "answerIndex": <index of the actual word, 0-3>,
+    "phoneticCategory": "<phonetic category like 'fricatives', 'vowel_contrast', 'minimal_pairs', etc.>",
+    "word": "<the actual target word>"
+}},
+{{
+    "kind": "fill-in-the-blanks",
+    "timestamp": <integer seconds after the sentence is spoken>,
+    "question": "Fill in the missing words from the sentence.",
+    "sentenceWithBlanks": "<sentence with [BLANK_1], [BLANK_2], ... markers>",
+    "promptSentence": "<the full original sentence>",
+    "blanks": ["<correct word 1>", "<correct word 2>"],
+    "phoneticCategory": "<phonetic category like 'fricatives', 'vowel_contrast', 'minimal_pairs', etc.>",
+    "word": "<main target word or short phrase>"
+}}
+]"""
+
     else:  # Lecture (default)
         prompt = f"""You are generating comprehension quiz questions for an interactive video lecture player.
 
-Given this transcript (with timestamps in seconds):
+Given this transcript (with timestamps in seconds) from a video that is about {duration_minutes:.1f} minutes long:
 
 {timed_transcript}
+
+Use these quiz settings exactly:
+{settings_block}
 
 Generate {num_questions} multiple-choice questions spread throughout the video. Place each question shortly after the relevant topic has been fully explained — not mid-explanation.
 
@@ -336,10 +772,41 @@ Return ONLY a JSON array with this exact structure, no other text:
         raw = raw[start:end + 1]
 
     questions = json.loads(raw)
-    return questions
+
+    normalized_questions = []
+    for question in questions:
+        if not isinstance(question, dict):
+            continue
+
+        kind = question.get("kind") or "multiple-choice"
+        question["kind"] = kind
+
+        if kind == "fill-in-the-blanks":
+            question["blanks"] = [
+                str(blank).strip()
+                for blank in question.get("blanks", [])
+                if str(blank).strip()
+            ]
+            question["sentenceWithBlanks"] = question.get(
+                "sentenceWithBlanks",
+                question.get("promptSentence", ""),
+            )
+            question["promptSentence"] = question.get(
+                "promptSentence",
+                question.get("sentenceWithBlanks", ""),
+            )
+        else:
+            question["choices"] = question.get("choices", [])
+            question["answerIndex"] = int(question.get("answerIndex", 0))
+
+        question["timestamp"] = int(question.get("timestamp", 0))
+        normalized_questions.append(question)
+
+    normalized_questions.sort(key=lambda item: item.get("timestamp", 0))
+    return normalized_questions
 
 
-def run_generation_job(job_id: str, req: QuestionRequest) -> None:
+def run_generation_job(job_id: str, req: QuestionRequest, user_id: str) -> None:
     audio_path = ""
     try:
         update_job(
@@ -362,12 +829,13 @@ def run_generation_job(job_id: str, req: QuestionRequest) -> None:
             stage="Generating questions",
             progress=80,
         )
-        user_progress = get_user_progress()
+        user_progress = get_user_progress(user_id)
         questions = generate_questions(
             transcript,
             req.type,
             req.difficulty,
             req.frequency,
+            req.cochlearAssessmentMode,
             req.specificGroups,
             req.specificSounds,
             user_progress
@@ -381,6 +849,7 @@ def run_generation_job(job_id: str, req: QuestionRequest) -> None:
             questions=questions,
         )
     except Exception as e:
+        logger.exception("Question generation job failed: %s", job_id)
         update_job(
             job_id,
             status="failed",
@@ -388,12 +857,71 @@ def run_generation_job(job_id: str, req: QuestionRequest) -> None:
             error=str(e),
         )
     finally:
-        if audio_path and os.path.exists(audio_path):
-            os.remove(audio_path)
+        cleanup_file(audio_path)
+
+
+def run_uploaded_generation_job(
+    job_id: str,
+    req: UploadQuestionRequest,
+    user_id: str,
+    media_path: str,
+) -> None:
+    try:
+        update_job(
+            job_id,
+            status="running",
+            stage="Processing upload",
+            progress=15,
+        )
+
+        update_job(
+            job_id,
+            stage="Transcribing upload",
+            progress=45,
+        )
+        transcript = transcribe(media_path)
+
+        update_job(
+            job_id,
+            stage="Generating questions",
+            progress=80,
+        )
+        user_progress = get_user_progress(user_id)
+        questions = generate_questions(
+            transcript,
+            req.type,
+            req.difficulty,
+            req.frequency,
+            req.cochlearAssessmentMode,
+            req.specificGroups,
+            req.specificSounds,
+            user_progress,
+        )
+
+        update_job(
+            job_id,
+            status="completed",
+            stage="Complete",
+            progress=100,
+            questions=questions,
+            mediaId=req.mediaId,
+            title=req.filename,
+        )
+    except Exception as e:
+        logger.exception("Uploaded media job failed: %s", job_id)
+        update_job(
+            job_id,
+            status="failed",
+            stage="Failed",
+            error=str(e),
+        )
+    finally:
+        cleanup_file(media_path)
 
 
 @app.post("/questions")
-def get_questions(req: QuestionRequest):
+def get_questions(req: QuestionRequest, authorization: Optional[str] = Header(default=None)):
+    user = get_authenticated_user(authorization)
     try:
         audio_path = download_audio(req.url)
     except Exception as e:
@@ -402,14 +930,23 @@ def get_questions(req: QuestionRequest):
     try:
         transcript = transcribe(audio_path)
     except Exception as e:
+        logger.exception("Transcription failed for URL request: %s", req.url)
         raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
     finally:
-        if os.path.exists(audio_path):
-            os.remove(audio_path)
+        cleanup_file(audio_path)
 
     try:
-        user_progress = get_user_progress()
-        questions = generate_questions(transcript, req.type, req.difficulty, req.frequency, req.specificGroups, req.specificSounds, user_progress)
+        user_progress = get_user_progress(user["id"])
+        questions = generate_questions(
+            transcript,
+            req.type,
+            req.difficulty,
+            req.frequency,
+            req.cochlearAssessmentMode,
+            req.specificGroups,
+            req.specificSounds,
+            user_progress,
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Question generation failed: {e}")
 
@@ -417,7 +954,8 @@ def get_questions(req: QuestionRequest):
 
 
 @app.post("/questions/jobs")
-def create_questions_job(req: QuestionRequest):
+def create_questions_job(req: QuestionRequest, authorization: Optional[str] = Header(default=None)):
+    user = get_authenticated_user(authorization)
     job_id = str(uuid.uuid4())
     with jobs_lock:
         jobs[job_id] = {
@@ -429,8 +967,63 @@ def create_questions_job(req: QuestionRequest):
             "error": None,
         }
 
-    Thread(target=run_generation_job, args=(job_id, req), daemon=True).start()
+    Thread(target=run_generation_job, args=(job_id, req, user["id"]), daemon=True).start()
     return {"jobId": job_id}
+
+
+@app.post("/questions/jobs/upload")
+async def create_uploaded_questions_job(
+    file: UploadFile = File(...),
+    type: str = Form("Cochlear"),
+    difficulty: str = Form("Beginner"),
+    frequency: str = Form("3-5"),
+    cochlearAssessmentMode: str = Form("multiple-choice"),
+    specificGroups: str = Form(""),
+    specificSounds: str = Form(""),
+    authorization: Optional[str] = Header(default=None),
+):
+    user = get_authenticated_user(authorization)
+
+    allowed_extensions = {
+        ".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac",
+        ".mp4", ".mov", ".m4v", ".webm", ".mpeg", ".mpg",
+    }
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in allowed_extensions:
+        raise HTTPException(status_code=400, detail="Unsupported media type")
+
+    media_path = save_uploaded_media(file)
+    job_id = str(uuid.uuid4())
+    media_id = f"upload-{job_id}"
+    req = UploadQuestionRequest(
+        filename=file.filename or "Uploaded media",
+        mediaId=media_id,
+        type=type,
+        difficulty=difficulty,
+        frequency=frequency,
+        cochlearAssessmentMode=cochlearAssessmentMode,
+        specificGroups=specificGroups,
+        specificSounds=specificSounds,
+    )
+
+    with jobs_lock:
+        jobs[job_id] = {
+            "id": job_id,
+            "status": "queued",
+            "stage": "Queued",
+            "progress": 0,
+            "questions": None,
+            "error": None,
+            "mediaId": media_id,
+            "title": req.filename,
+        }
+
+    Thread(
+        target=run_uploaded_generation_job,
+        args=(job_id, req, user["id"], str(media_path)),
+        daemon=True,
+    ).start()
+    return {"jobId": job_id, "mediaId": media_id, "title": req.filename}
 
 
 @app.get("/questions/jobs/{job_id}")
@@ -443,13 +1036,52 @@ def health():
     return {"status": "ok"}
 
 @app.post("/questions/results")
-def submit_question_result(result: QuestionResult):
+def submit_question_result(result: QuestionResult, authorization: Optional[str] = Header(default=None)):
     try:
-        save_question_result(result)
+        user = get_authenticated_user(authorization)
+        save_question_result(user["id"], result)
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/questions/results/{video_id}")
-def get_question_results_endpoint(video_id: str):
-    return get_question_results(video_id)
+def get_question_results_endpoint(video_id: str, authorization: Optional[str] = Header(default=None)):
+    user = get_authenticated_user(authorization)
+    return get_question_results(user["id"], video_id)
+
+
+@app.get("/profile")
+def get_profile_endpoint(authorization: Optional[str] = Header(default=None)):
+    user = get_authenticated_user(authorization)
+    return get_profile(user)
+
+
+@app.put("/profile")
+def update_profile_endpoint(
+    payload: ProfileUpdateRequest,
+    authorization: Optional[str] = Header(default=None),
+):
+    user = get_authenticated_user(authorization)
+    return update_profile(user["id"], payload)
+
+
+@app.get("/history")
+def get_history_endpoint(authorization: Optional[str] = Header(default=None)):
+    user = get_authenticated_user(authorization)
+    return list_score_history(user["id"])
+
+
+@app.post("/history")
+def save_history_endpoint(
+    record: VideoScoreRecord,
+    authorization: Optional[str] = Header(default=None),
+):
+    user = get_authenticated_user(authorization)
+    return save_score_record(user["id"], record)
+
+
+@app.delete("/history")
+def clear_history_endpoint(authorization: Optional[str] = Header(default=None)):
+    user = get_authenticated_user(authorization)
+    clear_score_history(user["id"])
+    return {"status": "success"}

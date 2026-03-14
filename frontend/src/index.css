@@ -1,1 +1,137 @@
 @import "tailwindcss";
+
+@keyframes confetti-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate(0, 0) rotate(0deg) scale(0.6);
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%)
+      translate(var(--confetti-x), calc(var(--confetti-y) + 140px))
+      rotate(var(--confetti-rotate)) scale(1);
+  }
+}
+
+@keyframes fade-up {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes soft-float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-7px);
+  }
+}
+
+@keyframes shimmer-slide {
+  0% {
+    transform: translateX(-130%);
+  }
+
+  100% {
+    transform: translateX(130%);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(56, 189, 248, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 28px rgba(56, 189, 248, 0.2);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.55s ease-out both;
+}
+
+.animate-soft-float {
+  animation: soft-float 4.2s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2.8s ease-in-out infinite;
+}
+
+@keyframes popup-overlay-in {
+  0% {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+
+  100% {
+    opacity: 1;
+    backdrop-filter: blur(6px);
+  }
+}
+
+@keyframes popup-overlay-out {
+  0% {
+    opacity: 1;
+    backdrop-filter: blur(6px);
+  }
+
+  100% {
+    opacity: 0;
+    backdrop-filter: blur(0px);
+  }
+}
+
+@keyframes popup-panel-in {
+  0% {
+    opacity: 0;
+    transform: translateY(22px) scale(0.96);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0px) scale(1);
+  }
+}
+
+@keyframes popup-panel-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0px) scale(1);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+
+.animate-popup-overlay-in {
+  animation: popup-overlay-in 220ms ease-out both;
+}
+
+.animate-popup-overlay-out {
+  animation: popup-overlay-out 220ms ease-in both;
+}
+
+.animate-popup-panel-in {
+  animation: popup-panel-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-popup-panel-out {
+  animation: popup-panel-out 220ms ease-in both;
+}

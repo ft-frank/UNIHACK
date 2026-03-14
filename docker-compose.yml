@@ -9,7 +9,13 @@ services:
       - ./backend/downloads:/app/downloads
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+        VITE_AUTH_REDIRECT_URL: ${VITE_AUTH_REDIRECT_URL:-http://localhost}
     ports:
       - "80:80"
     depends_on:

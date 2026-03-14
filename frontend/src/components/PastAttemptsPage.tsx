@@ -4,9 +4,10 @@ import { getQuestionResults, type QuestionResult } from "../questions";
 
 interface PastAttemptsPageProps {
   history: VideoScoreRecord[];
+  isDarkMode: boolean;
 }
 
-export default function PastAttemptsPage({ history }: PastAttemptsPageProps) {
+export default function PastAttemptsPage({ history, isDarkMode }: PastAttemptsPageProps) {
   const [expandedVideoId, setExpandedVideoId] = useState<string | null>(null);
   const [resultsMap, setResultsMap] = useState<Record<string, QuestionResult[]>>({});
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
@@ -38,8 +39,8 @@ export default function PastAttemptsPage({ history }: PastAttemptsPageProps) {
 
   if (history.length === 0) {
     return (
-      <div className="flex aspect-video items-center justify-center rounded-[24px] border border-slate-200 bg-white/80 p-8 text-center text-slate-500 shadow-sm backdrop-blur">
-        <p className="font-medium text-slate-500">
+      <div className={`flex aspect-video items-center justify-center rounded-[24px] border p-8 text-center shadow-sm backdrop-blur ${isDarkMode ? "border-slate-800 bg-slate-900/75 text-slate-400" : "border-slate-200 bg-white/80 text-slate-500"}`}>
+        <p className={`font-medium ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
           No past video attempts found. Complete a video to see your detailed logs here.
         </p>
       </div>
@@ -48,9 +49,9 @@ export default function PastAttemptsPage({ history }: PastAttemptsPageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-slate-800">Past Attempts Log</h2>
-        <p className="mt-2 text-sm text-slate-500">
+      <div className="animate-fade-up mb-8">
+        <h2 className={`text-2xl font-bold ${isDarkMode ? "text-slate-100" : "text-slate-800"}`}>Echolearn Attempts Log</h2>
+        <p className={`mt-2 text-sm ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
           Review your previous videos and detailed question performance to see where you can improve.
         </p>
       </div>
@@ -65,34 +66,40 @@ export default function PastAttemptsPage({ history }: PastAttemptsPageProps) {
           return (
             <div
               key={`${record.videoId}-${record.completedAt}`}
-              className="overflow-hidden rounded-2xl border border-slate-200 bg-white/90 shadow-sm transition-all hover:border-slate-300"
+              className={`animate-fade-up overflow-hidden rounded-2xl border shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg ${
+                isDarkMode
+                  ? "border-slate-800 bg-slate-900/85 hover:border-slate-700"
+                  : "border-slate-200 bg-white/90 hover:border-slate-300"
+              }`}
             >
               <button
                 onClick={() => handleToggle(record.videoId)}
-                className="flex w-full items-center justify-between p-5 text-left transition-colors hover:bg-slate-50"
+                className={`flex w-full flex-col items-start gap-4 p-4 text-left transition-all duration-300 sm:flex-row sm:items-center sm:justify-between sm:p-5 ${
+                  isDarkMode ? "hover:bg-slate-800/70" : "hover:bg-slate-50"
+                }`}
               >
-                <div className="flex items-center gap-5">
-                  <div className="relative h-20 w-36 shrink-0 overflow-hidden rounded-xl bg-black">
+                <div className="flex w-full items-start gap-4 sm:w-auto sm:items-center sm:gap-5">
+                  <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded-xl bg-black sm:w-36">
                     <img
                       src={`https://img.youtube.com/vi/${record.videoId}/hqdefault.jpg`}
                       alt={record.videoName}
                       className="absolute inset-0 h-full w-full object-cover"
                     />
                   </div>
-                  <div className="flex flex-col">
-                    <h3 className="text-lg font-bold text-slate-800 line-clamp-1">
+                  <div className="min-w-0 flex-1">
+                    <h3 className={`line-clamp-1 text-lg font-bold ${isDarkMode ? "text-slate-100" : "text-slate-800"}`}>
                       {record.videoName}
                     </h3>
-                    <p className="mt-1 text-sm font-medium text-slate-500">
+                    <p className={`mt-1 text-sm font-medium ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
                       Score: {record.score} / {record.totalQuestions}
                     </p>
-                    <p className="text-xs text-slate-400">
+                    <p className={`text-xs ${isDarkMode ? "text-slate-500" : "text-slate-400"}`}>
                       Completed: {new Date(record.completedAt).toLocaleString()}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 transition-transform">
+                <div className={`flex h-10 w-10 shrink-0 items-center justify-center self-end rounded-full transition-transform sm:self-auto ${isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-500"}`}>
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     fill="none"
@@ -109,32 +116,32 @@ export default function PastAttemptsPage({ history }: PastAttemptsPageProps) {
               </button>
 
               {isExpanded && (
-                <div className="border-t border-slate-100 bg-slate-50/50 p-6">
+                <div className={`border-t p-6 ${isDarkMode ? "border-slate-800 bg-slate-950/40" : "border-slate-100 bg-slate-50/50"}`}>
                   {isLoading ? (
-                    <div className="flex items-center justify-center py-6 text-slate-400">
+                    <div className={`flex items-center justify-center py-6 ${isDarkMode ? "text-slate-500" : "text-slate-400"}`}>
                       <span className="text-sm font-medium">Loading question log...</span>
                     </div>
                   ) : hasError ? (
-                    <div className="rounded-xl border border-rose-100 bg-rose-50 p-4 text-center text-rose-600">
+                    <div className={`rounded-xl border p-4 text-center ${isDarkMode ? "border-rose-900 bg-rose-950/50 text-rose-300" : "border-rose-100 bg-rose-50 text-rose-600"}`}>
                       {hasError}
                     </div>
                   ) : logs.length === 0 ? (
-                    <div className="text-center text-sm font-medium text-slate-400">
+                    <div className={`text-center text-sm font-medium ${isDarkMode ? "text-slate-500" : "text-slate-400"}`}>
                       No detailed log found for this video.
                     </div>
                   ) : (
                     <div className="flex flex-col gap-3">
-                      <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                      <h4 className={`text-xs font-semibold uppercase tracking-wider ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
                         Detailed Question Log
                       </h4>
                       {logs.map((log, idx) => (
                         <div
                           key={idx}
-                          className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                          className={`rounded-xl border p-4 shadow-sm transition-all duration-300 hover:-translate-y-0.5 ${isDarkMode ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"}`}
                         >
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-col gap-3">
                             <div className="flex items-center gap-3">
-                              <span className="font-mono text-sm font-bold text-slate-500">
+                              <span className={`font-mono text-sm font-bold ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
                                 {formatTime(log.timestamp)}
                               </span>
                               <span
@@ -147,13 +154,39 @@ export default function PastAttemptsPage({ history }: PastAttemptsPageProps) {
                                 {log.correct ? "Correct" : "Incorrect"}
                               </span>
                             </div>
+                            <div className="space-y-1">
+                              <p className={`text-xs font-semibold uppercase tracking-[0.2em] ${isDarkMode ? "text-slate-500" : "text-slate-400"}`}>
+                                Question asked
+                              </p>
+                              <p className={`text-sm font-medium ${isDarkMode ? "text-slate-100" : "text-slate-800"}`}>
+                                {log.questionText ?? "Not available"}
+                              </p>
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div className={`rounded-lg border px-3 py-2 ${isDarkMode ? "border-slate-700 bg-slate-800/80" : "border-slate-200 bg-slate-50"}`}>
+                                <p className={`text-xs font-semibold uppercase tracking-[0.18em] ${isDarkMode ? "text-slate-500" : "text-slate-400"}`}>
+                                  Your answer
+                                </p>
+                                <p className={`mt-1 text-sm font-medium ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>
+                                  {log.selectedAnswer ?? "Not available"}
+                                </p>
+                              </div>
+                              <div className={`rounded-lg border px-3 py-2 ${isDarkMode ? "border-emerald-900/70 bg-emerald-950/30" : "border-emerald-200 bg-emerald-50"}`}>
+                                <p className={`text-xs font-semibold uppercase tracking-[0.18em] ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}>
+                                  Correct answer
+                                </p>
+                                <p className={`mt-1 text-sm font-medium ${isDarkMode ? "text-emerald-100" : "text-emerald-800"}`}>
+                                  {log.correctAnswer ?? "Not available"}
+                                </p>
+                              </div>
+                            </div>
                             {log.word && (
-                              <p className="text-sm font-medium text-slate-700">
+                              <p className={`text-sm font-medium ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>
                                 Tested Word: <span className="font-bold">{log.word}</span>
                               </p>
                             )}
                             {log.phoneticCategory && (
-                              <p className="text-xs text-slate-500">
+                              <p className={`text-xs ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>
                                 Phonetic Category: {log.phoneticCategory}
                               </p>
                             )}

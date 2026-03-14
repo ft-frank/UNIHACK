@@ -1,14 +1,28 @@
 // questions.ts
 import type { UserSettings } from "./components/settings";
+import { apiFetch } from "./lib/api";
 
-export type Question = {
+type BaseQuestion = {
   timestamp: number;
   question: string;
-  choices: string[];
-  answerIndex: number;
   word?: string;
   phoneticCategory?: string;
 };
+
+export type MultipleChoiceQuestion = BaseQuestion & {
+  kind: "multiple-choice";
+  choices: string[];
+  answerIndex: number;
+};
+
+export type FillInTheBlanksQuestion = BaseQuestion & {
+  kind: "fill-in-the-blanks";
+  sentenceWithBlanks: string;
+  promptSentence: string;
+  blanks: string[];
+};
+
+export type Question = MultipleChoiceQuestion | FillInTheBlanksQuestion;
 
 export type QuestionsJob = {
   id: string;
@@ -17,84 +31,86 @@ export type QuestionsJob = {
   progress: number;
   questions: Question[] | null;
   error: string | null;
+  mediaId?: string;
+  title?: string;
 };
 
 export type QuestionResult = {
   videoId: string;
   timestamp: number;
   correct: boolean;
+  questionText?: string;
+  selectedAnswer?: string;
+  correctAnswer?: string;
   word?: string;
   phoneticCategory?: string;
 };
-
-const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 export const createQuestionsJob = async (
   youtubeUrl: string,
   settings: UserSettings
 ): Promise<string> => {
-  const response = await fetch(`${apiBase}/questions/jobs`, {
+  const data = await apiFetch<{ jobId: string }>("/questions/jobs", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       url: youtubeUrl,
       ...settings,
     }),
   });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail ?? "Failed to fetch questions");
-  }
-
-  const data: { jobId: string } = await response.json();
   return data.jobId;
 };
 
-export const getQuestionsJob = async (jobId: string): Promise<QuestionsJob> => {
-  const response = await fetch(`${apiBase}/questions/jobs/${jobId}`);
+export const createUploadQuestionsJob = async (
+  file: File,
+  settings: UserSettings
+): Promise<{ jobId: string; mediaId: string; title: string }> => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("type", settings.type);
+  formData.append("difficulty", settings.difficulty);
+  formData.append("frequency", settings.frequency);
+  formData.append("cochlearAssessmentMode", settings.cochlearAssessmentMode);
+  formData.append("specificGroups", settings.specificGroups);
+  formData.append("specificSounds", settings.specificSounds);
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail ?? "Failed to load job status");
-  }
-  const data = await response.json();
-  console.log(data);
-  return data;
+  return apiFetch<{ jobId: string; mediaId: string; title: string }>(
+    "/questions/jobs/upload",
+    {
+      method: "POST",
+      body: formData,
+    }
+  );
 };
+
+export const getQuestionsJob = async (jobId: string): Promise<QuestionsJob> =>
+  apiFetch<QuestionsJob>(`/questions/jobs/${jobId}`);
 
 export const submitQuestionResult = async (
   videoId: string,
   timestamp: number,
   correct: boolean,
+  questionText?: string,
+  selectedAnswer?: string,
+  correctAnswer?: string,
   word?: string,
   phoneticCategory?: string
 ): Promise<void> => {
-  const response = await fetch(`${apiBase}/questions/results`, {
+  await apiFetch<{ status: string }>("/questions/results", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       videoId,
       timestamp,
       correct,
+      questionText,
+      selectedAnswer,
+      correctAnswer,
       word,
       phoneticCategory,
     }),
   });
-
-  if (!response.ok) {
-    console.error("Failed to submit question result");
-  }
 };
 
 export const getQuestionResults = async (
   videoId: string
-): Promise<QuestionResult[]> => {
-  const response = await fetch(`${apiBase}/questions/results/${videoId}`);
-
-  if (!response.ok) {
-    throw new Error("Failed to load question results");
-  }
-  const data = await response.json();
-  return data;
-};
+): Promise<QuestionResult[]> =>
+  apiFetch<QuestionResult[]>(`/questions/results/${videoId}`);

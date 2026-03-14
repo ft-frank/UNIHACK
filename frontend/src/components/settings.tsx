@@ -5,6 +5,7 @@ export type UserSettings = {
   type: "Lecture" | "Cochlear";
   difficulty: string;
   frequency: string;
+  cochlearAssessmentMode: "multiple-choice" | "fill-in-the-blanks" | "both";
   specificGroups: string;
   specificSounds: string;
 };
@@ -13,21 +14,37 @@ type SettingsProps = {
   isOpen: boolean;
   onClose: () => void;
   currentSettings: UserSettings;
+  isDarkMode: boolean;
   onSave: (newSettings: UserSettings) => void;
 };
 
-export default function Settings({ isOpen, onClose, currentSettings, onSave }: SettingsProps) {
+export default function Settings({
+  isOpen,
+  onClose,
+  currentSettings,
+  isDarkMode,
+  onSave,
+}: SettingsProps) {
   // Local state so we only apply changes if they click "Save"
   const [localSettings, setLocalSettings] = useState<UserSettings>(currentSettings);
+  const [shouldRender, setShouldRender] = useState(isOpen);
 
   // Reset local state to match current settings whenever the modal opens
   useEffect(() => {
     if (isOpen) {
       setLocalSettings(currentSettings);
+      setShouldRender(true);
+      return;
     }
+
+    const timeoutId = window.setTimeout(() => {
+      setShouldRender(false);
+    }, 220);
+
+    return () => window.clearTimeout(timeoutId);
   }, [isOpen, currentSettings]);
 
-  if (!isOpen) return null;
+  if (!shouldRender) return null;
 
   const handleSave = () => {
     onSave(localSettings);
@@ -41,13 +58,30 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
   const isCochlear = localSettings.type === "Cochlear";
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm ${
+        isOpen ? "animate-popup-overlay-in" : "animate-popup-overlay-out"
+      }`}
+    >
+      <div
+        className={`w-full max-w-md overflow-hidden rounded-xl shadow-xl ${
+          isOpen ? "animate-popup-panel-in" : "animate-popup-panel-out"
+        } ${
+          isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"
+        }`}
+      >
 
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-          <h2 className="text-lg font-bold text-slate-800">Quiz Settings</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+        <div
+          className={`flex items-center justify-between border-b px-6 py-4 ${
+            isDarkMode ? "border-slate-800 bg-slate-950/70" : "border-gray-100 bg-gray-50/50"
+          }`}
+        >
+          <h2 className={`text-lg font-bold ${isDarkMode ? "text-slate-100" : "text-slate-800"}`}>Echolearn Settings</h2>
+          <button
+            onClick={onClose}
+            className={`transition-colors ${isDarkMode ? "text-slate-500 hover:text-slate-200" : "text-gray-400 hover:text-gray-600"}`}
+          >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
             </svg>
@@ -59,7 +93,7 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
 
           {/* Type */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-semibold text-slate-700">Type</label>
+            <label className={`text-sm font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>Type</label>
             <div className="grid grid-cols-2 gap-2">
               {(["Lecture", "Cochlear"] as const).map((t) => (
                 <button
@@ -69,6 +103,8 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
                   className={`py-2.5 px-4 rounded-lg border text-sm font-semibold transition-all ${
                     localSettings.type === t
                       ? "bg-[#0b0f19] text-white border-[#0b0f19]"
+                      : isDarkMode
+                      ? "border-slate-700 bg-slate-800 text-slate-200 hover:border-slate-500"
                       : "bg-gray-50 text-slate-700 border-gray-200 hover:border-slate-400"
                   }`}
                 >
@@ -76,7 +112,7 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className={`mt-0.5 text-xs ${isDarkMode ? "text-slate-400" : "text-gray-400"}`}>
               {isCochlear
                 ? "Targets phonetically difficult words for hearing rehabilitation."
                 : "Asks comprehension questions about topics covered in the video."}
@@ -85,11 +121,15 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
 
           {/* Difficulty */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-semibold text-slate-700">Difficulty</label>
+            <label className={`text-sm font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>Difficulty</label>
             <select
               value={localSettings.difficulty}
               onChange={(e) => handleChange("difficulty", e.target.value)}
-              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 focus:bg-white text-sm text-slate-700 font-medium"
+              className={`w-full rounded-lg border px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-800 ${
+                isDarkMode
+                  ? "border-slate-700 bg-slate-800 text-slate-100 focus:bg-slate-800"
+                  : "border-gray-200 bg-gray-50 text-slate-700 focus:bg-white"
+              }`}
             >
               <option value="Beginner">Beginner</option>
               <option value="Intermediate">Intermediate</option>
@@ -99,11 +139,15 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
 
           {/* Frequency */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-semibold text-slate-700">Frequency (Questions)</label>
+            <label className={`text-sm font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>Frequency (Questions)</label>
             <select
               value={localSettings.frequency}
               onChange={(e) => handleChange("frequency", e.target.value)}
-              className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 focus:bg-white text-sm text-slate-700 font-medium"
+              className={`w-full rounded-lg border px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-800 ${
+                isDarkMode
+                  ? "border-slate-700 bg-slate-800 text-slate-100 focus:bg-slate-800"
+                  : "border-gray-200 bg-gray-50 text-slate-700 focus:bg-white"
+              }`}
             >
               <option value="3-5">3 - 5</option>
               <option value="5-10">5 - 10</option>
@@ -114,15 +158,41 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
           {/* Cochlear-only options */}
           {isCochlear && (
             <>
+              <div className="flex flex-col gap-1.5">
+                <label className={`text-sm font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>
+                  Assessment Style
+                </label>
+                <select
+                  value={localSettings.cochlearAssessmentMode}
+                  onChange={(e) => handleChange("cochlearAssessmentMode", e.target.value)}
+                  className={`w-full rounded-lg border px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-800 ${
+                    isDarkMode
+                      ? "border-slate-700 bg-slate-800 text-slate-100 focus:bg-slate-800"
+                      : "border-gray-200 bg-gray-50 text-slate-700 focus:bg-white"
+                  }`}
+                >
+                  <option value="multiple-choice">Multiple choice</option>
+                  <option value="fill-in-the-blanks">Fill in the blanks</option>
+                  <option value="both">Both</option>
+                </select>
+                <p className={`mt-0.5 text-xs ${isDarkMode ? "text-slate-400" : "text-gray-400"}`}>
+                  Choose whether cochlear practice uses recognition, recall, or a mix of both.
+                </p>
+              </div>
+
               {/* Specific Groups */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold text-slate-700">
-                  Specific Groups <span className="text-gray-400 font-normal">(Optional)</span>
+                <label className={`text-sm font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>
+                  Specific Groups <span className={`${isDarkMode ? "text-slate-400" : "text-gray-400"} font-normal`}>(Optional)</span>
                 </label>
                 <select
                   value={localSettings.specificGroups}
                   onChange={(e) => handleChange("specificGroups", e.target.value)}
-                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 focus:bg-white text-sm text-slate-700 font-medium"
+                  className={`w-full rounded-lg border px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-800 ${
+                    isDarkMode
+                      ? "border-slate-700 bg-slate-800 text-slate-100 focus:bg-slate-800"
+                      : "border-gray-200 bg-gray-50 text-slate-700 focus:bg-white"
+                  }`}
                 >
                   <option value="">None Selected</option>
                   <option value="Fricatives">Fricatives</option>
@@ -133,13 +203,17 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
 
               {/* Specific Sounds */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-sm font-semibold text-slate-700">
-                  Specific Sounds <span className="text-gray-400 font-normal">(Optional)</span>
+                <label className={`text-sm font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>
+                  Specific Sounds <span className={`${isDarkMode ? "text-slate-400" : "text-gray-400"} font-normal`}>(Optional)</span>
                 </label>
                 <select
                   value={localSettings.specificSounds}
                   onChange={(e) => handleChange("specificSounds", e.target.value)}
-                  className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-800 focus:bg-white text-sm text-slate-700 font-medium"
+                  className={`w-full rounded-lg border px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-800 ${
+                    isDarkMode
+                      ? "border-slate-700 bg-slate-800 text-slate-100 focus:bg-slate-800"
+                      : "border-gray-200 bg-gray-50 text-slate-700 focus:bg-white"
+                  }`}
                 >
                   <option value="">None Selected</option>
                   <option value="/s/">/s/</option>
@@ -153,10 +227,16 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50/50 flex justify-end gap-3">
+        <div
+          className={`flex justify-end gap-3 border-t px-6 py-4 ${
+            isDarkMode ? "border-slate-800 bg-slate-950/70" : "border-gray-100 bg-gray-50/50"
+          }`}
+        >
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-900 transition-colors"
+            className={`px-4 py-2 text-sm font-semibold transition-colors ${
+              isDarkMode ? "text-slate-400 hover:text-slate-100" : "text-slate-600 hover:text-slate-900"
+            }`}
           >
             Cancel
           </button>
