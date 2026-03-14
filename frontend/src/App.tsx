@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Settings, { type UserSettings } from "./components/settings";
 import StatisticsPage from "./components/StatisticsPage";
+import PastAttemptsPage from "./components/PastAttemptsPage";
 import {
   clearStoredHistory,
   getStoredHistory,
@@ -8,7 +9,7 @@ import {
   type VideoScoreRecord,
 } from "./lib/scoreHistory";
 import type { Question, QuestionsJob } from "./questions";
-import { createQuestionsJob, getQuestionsJob } from "./questions";
+import { createQuestionsJob, getQuestionsJob, submitQuestionResult } from "./questions";
 
 declare global {
   interface Window {
@@ -20,7 +21,7 @@ declare global {
 const POLL_INTERVAL_MS = 1500;
 
 export default function App() {
-  const [activePage, setActivePage] = useState<"dashboard" | "statistics">(
+  const [activePage, setActivePage] = useState<"dashboard" | "statistics" | "past-attempts">(
     "dashboard"
   );
   const [isNavOpen, setIsNavOpen] = useState(false);
@@ -222,13 +223,30 @@ export default function App() {
     }
   };
 
-  const handleAnswerClick = (index: number) => {
+  const handleAnswerClick = async (index: number) => {
     if (!currentQuestion) return;
 
-    if (index === currentQuestion.answerIndex) {
+    const isCorrect = index === currentQuestion.answerIndex;
+
+    if (videoId) {
+      submitQuestionResult(
+        videoId,
+        currentQuestion.timestamp,
+        isCorrect,
+        currentQuestion.word,
+        currentQuestion.phoneticCategory
+      ).catch(console.error);
+    }
+
+    if (isCorrect) {
       setFeedback("Correct!");
       setScore((previous) => previous + 1);
       return;
+    }
+
+    if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
+      const currentTime = playerRef.current.getCurrentTime();
+      playerRef.current.seekTo(Math.max(0, currentTime - 7), true);
     }
 
     setFeedback(
@@ -330,6 +348,14 @@ export default function App() {
               setIsNavOpen(false);
             }}
           />
+          <NavButton
+            label="Past Attempts"
+            active={activePage === "past-attempts"}
+            onClick={() => {
+              setActivePage("past-attempts");
+              setIsNavOpen(false);
+            }}
+          />
         </nav>
 
         <div className="mt-auto rounded-[24px] border border-white/10 bg-white/5 p-4">
@@ -353,12 +379,18 @@ export default function App() {
       <header className="flex items-center justify-between border-b border-slate-200/80 px-20 py-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-sky-700">
-            {activePage === "dashboard" ? "Dashboard" : "Statistics"}
+            {activePage === "dashboard"
+              ? "Dashboard"
+              : activePage === "statistics"
+              ? "Statistics"
+              : "Past Attempts"}
           </p>
           <h1 className="mt-1 text-xl font-bold text-slate-800">
             {activePage === "dashboard"
               ? "YouTube Interactive Quiz"
-              : "Performance Overview"}
+              : activePage === "statistics"
+              ? "Performance Overview"
+              : "History Log"}
           </h1>
         </div>
 
@@ -533,12 +565,16 @@ export default function App() {
             </div>
           </main>
         </>
-      ) : (
+      ) : activePage === "statistics" ? (
         <main className="mx-auto max-w-[1600px] px-6 py-8">
           <StatisticsPage
             history={history}
             onClearHistory={handleClearHistory}
           />
+        </main>
+      ) : (
+        <main className="mx-auto max-w-[1600px] px-6 py-8">
+          <PastAttemptsPage history={history} />
         </main>
       )}
     </div>
