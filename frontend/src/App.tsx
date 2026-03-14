@@ -99,6 +99,7 @@ export default function App() {
     setLoading(true);
     try {
       const fetchedData = await fetchQuestionsForVideo(urlInput, settings);
+      console.log("Generated questions:", fetchedData);
       questionsRef.current = fetchedData;
     } finally {
       setLoading(false);
