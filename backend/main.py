@@ -126,16 +126,13 @@ def build_transcript_lines(transcript) -> str:
 
 def build_word_transcript(transcript) -> str:
     """Word-level transcript with start, end, and pause_at times for Cochlear mode.
-    pause_at is the start of the next word, so the video pauses one word after the target."""
+    pause_at is end + 1 second, giving the word time to finish before the question appears."""
     words = transcript.words or []
     lines = []
-    for i, w in enumerate(words):
+    for w in words:
         start_sec = w.start // 1000
         end_sec = w.end // 1000
-        if i + 1 < len(words):
-            pause_at_sec = words[i + 1].start // 1000
-        else:
-            pause_at_sec = end_sec + 1
+        pause_at_sec = end_sec + 1
         lines.append(f"[start:{start_sec}s end:{end_sec}s pause_at:{pause_at_sec}s] {w.text}")
     return "\n".join(lines)
 
@@ -212,7 +209,7 @@ Return ONLY a JSON array with this exact structure, no other text:
 ]"""
 
     message = anthropic_client.messages.create(
-        model="claude-opus-4-6",
+        model="claude-sonnet-4-6",
         max_tokens=2048,
         messages=[{"role": "user", "content": prompt}],
     )

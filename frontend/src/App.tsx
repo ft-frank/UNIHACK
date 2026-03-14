@@ -31,18 +31,25 @@ export default function App() {
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [score, setScore] = useState(0);
+  const [answeredCount, setAnsweredCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [generationStage, setGenerationStage] = useState("Waiting to start");
   const [generationProgress, setGenerationProgress] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [history, setHistory] = useState<VideoScoreRecord[]>([]);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settings, setSettings] = useState<UserSettings>({
-    type: "Lecture",
-    difficulty: "Beginner",
-    frequency: "3-5",
-    specificGroups: "",
-    specificSounds: "",
+  const [settings, setSettings] = useState<UserSettings>(() => {
+    try {
+      const stored = window.localStorage.getItem("unihack.settings");
+      if (stored) return JSON.parse(stored) as UserSettings;
+    } catch {}
+    return {
+      type: "Lecture",
+      difficulty: "Beginner",
+      frequency: "3-5",
+      specificGroups: "",
+      specificSounds: "",
+    };
   });
 
   const playerRef = useRef<any>(null);
@@ -194,6 +201,7 @@ export default function App() {
     setCurrentQuestion(null);
     setFeedback(null);
     setScore(0);
+    setAnsweredCount(0);
     setVideoTitle("");
     setVideoId("");
     setPendingVideoId(nextVideoId);
@@ -224,6 +232,8 @@ export default function App() {
 
   const handleAnswerClick = (index: number) => {
     if (!currentQuestion) return;
+
+    setAnsweredCount((previous) => previous + 1);
 
     if (index === currentQuestion.answerIndex) {
       setFeedback("Correct!");
@@ -347,6 +357,7 @@ export default function App() {
         currentSettings={settings}
         onSave={(newSettings) => {
           setSettings(newSettings);
+          window.localStorage.setItem("unihack.settings", JSON.stringify(newSettings));
         }}
       />
 
@@ -455,7 +466,7 @@ export default function App() {
 
               {!loading && videoId && (
                 <p className="mt-4 text-sm font-medium text-slate-500">
-                  Pause the video to reveal quiz questions. Finishing the video
+                  Play the video to reveal quiz questions. Finishing the video
                   saves this score to your local results database.
                 </p>
               )}
@@ -515,7 +526,7 @@ export default function App() {
                     {loading
                       ? `${generationStage} (${generationProgress}%)`
                       : videoId
-                      ? "Pause the video to start answering questions"
+                      ? "Play the video to start answering questions"
                       : "Questions will appear after generation completes"}
                   </p>
                 )}
@@ -526,7 +537,10 @@ export default function App() {
                   Progress snapshot
                 </p>
                 <div className="mt-4 grid grid-cols-2 gap-4">
-                  <SnapshotCard label="Current score" value={`${score}`} />
+                  <SnapshotCard
+                    label="Current score"
+                    value={answeredCount > 0 ? `${Math.round((score / answeredCount) * 100)}%` : "—"}
+                  />
                   <SnapshotCard label="Saved sessions" value={`${history.length}`} />
                 </div>
               </div>
