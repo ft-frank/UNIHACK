@@ -11,9 +11,20 @@ declare global {
 export default function App() {
   const [urlInput, setUrlInput] = useState("");
   const [videoId, setVideoId] = useState("");
+  
+  // UI State
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [score, setScore] = useState(0);
+
+  // We need a ref for the active question so our YouTube event listener can always see it
+  const currentQuestionRef = useRef<Question | null>(null);
+
+  // Helper function to update both the state (for UI) and the ref (for YouTube events)
+  const setQuestionState = (q: Question | null) => {
+    setCurrentQuestion(q);
+    currentQuestionRef.current = q;
+  };
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<UserSettings>({
@@ -44,14 +55,48 @@ export default function App() {
       height: "100%",
       width: "100%",
       videoId,
-      playerVars: { autoplay: 1 },
+      playerVars: { 
+        autoplay: 1,
+        fs: 0, // 💥 THE FIX 1: This hides the Full Screen button!
+      },
       events: {
         onReady: () => {
           playerRef.current.playVideo();
           startPolling();
         },
         onStateChange: (e: any) => {
-          e.data === window.YT.PlayerState.PLAYING ? startPolling() : stopPolling();
+          // 💥 THE FIX 2: Intercept the PLAYING state
+          if (e.data === window.YT.PlayerState.PLAYING) {
+            
+            // If a question is currently on screen...
+            if (currentQuestionRef.current) {
+              const currentTime = playerRef.current.getCurrentTime();
+              
+              // Check if they rewound the video (at least 0.5s before the question)
+              if (currentTime < currentQuestionRef.current.timestamp - 0.5) {
+                // They rewound! Let them re-watch the part they missed.
+                const activeTimestamp = currentQuestionRef.current.timestamp;
+                
+                // 1. Hide the question UI
+                setQuestionState(null);
+                setFeedback(null);
+                
+                // 2. Remove this question from the "processed" list so it triggers again later!
+                processedRef.current = processedRef.current.filter((t) => t !== activeTimestamp);
+                
+                // 3. Let it play and resume polling
+                startPolling();
+              } else {
+                // They didn't rewind, they just tried to hit "Play" to skip the question. Block it!
+                playerRef.current.pauseVideo();
+              }
+            } else {
+              // Normal playback
+              startPolling();
+            }
+          } else {
+            stopPolling();
+          }
         },
       },
     });
@@ -72,7 +117,7 @@ export default function App() {
       if (question) {
         processedRef.current.push(question.timestamp);
         playerRef.current.pauseVideo();
-        setCurrentQuestion(question);
+        setQuestionState(question); // Use the new helper
       }
     }, 200);
   };
@@ -84,7 +129,6 @@ export default function App() {
   const handleLoadVideo = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // 💥 THE FIX: Pass `settings` as the second argument here!
     const fetchedData = await fetchQuestionsForVideo(urlInput, settings);
     questionsRef.current = fetchedData;
     
@@ -92,7 +136,7 @@ export default function App() {
     if (match) setVideoId(match[1]);
     
     processedRef.current = [];
-    setCurrentQuestion(null);
+    setQuestionState(null); // Use the new helper
     setFeedback(null);
     setScore(0);
   };
@@ -108,7 +152,7 @@ export default function App() {
   };
 
   const continueVideo = () => {
-    setCurrentQuestion(null);
+    setQuestionState(null); // Use the new helper
     setFeedback(null);
     playerRef.current?.playVideo();
     startPolling();
