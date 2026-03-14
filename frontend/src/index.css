@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+@keyframes confettiBurst {
+  0%   { opacity: 1; transform: translate(-50%, -50%) rotate(0deg); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--cx)), calc(-50% + var(--cy))) rotate(var(--cr)); }
+}

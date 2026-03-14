@@ -1,3 +1,5 @@
+import { apiFetch, backendHasPath } from "./api";
+
 export type VideoScoreRecord = {
   id: string;
   videoId: string;
@@ -8,52 +10,62 @@ export type VideoScoreRecord = {
   percentage: number;
 };
 
-const STORAGE_KEY = "unihack.videoScoreHistory";
+const normalizeScoreRecord = (record: VideoScoreRecord): VideoScoreRecord => ({
+  ...record,
+  id: record.id ?? `${record.videoId}-${record.completedAt}`,
+  percentage:
+    record.percentage ??
+    (record.totalQuestions > 0
+      ? Math.round((record.score / record.totalQuestions) * 100)
+      : 0),
+});
 
-const hasWindow = () => typeof window !== "undefined";
-
-export const getStoredHistory = (): VideoScoreRecord[] => {
-  if (!hasWindow()) return [];
+const tryHistoryRequest = async <T>(
+  method: "GET" | "POST" | "DELETE",
+  body?: string
+): Promise<T> => {
+  const hasHistoryPath = await backendHasPath("/history");
+  if (!hasHistoryPath) {
+    if (method === "GET") return [] as T;
+    return { status: "unavailable" } as T;
+  }
 
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw) as VideoScoreRecord[];
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .filter(
-        (entry) =>
-          entry &&
-          typeof entry.videoId === "string" &&
-          typeof entry.videoName === "string" &&
-          typeof entry.completedAt === "string" &&
-          typeof entry.score === "number" &&
-          typeof entry.totalQuestions === "number" &&
-          typeof entry.percentage === "number"
-      )
-      .sort(
-        (a, b) =>
-          new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
-      );
-  } catch {
-    return [];
+    return await apiFetch<T>("/history", {
+      method,
+      ...(body ? { body } : {}),
+    });
+  } catch (error) {
+    if (error instanceof TypeError && error.message === "Failed to fetch") {
+      if (method === "GET") return [] as T;
+      return { status: "unavailable" } as T;
+    }
+    const message = error instanceof Error ? error.message : "";
+    if (message === "Not Found") {
+      if (method === "GET") return [] as T;
+      return { status: "unavailable" } as T;
+    }
+    throw error;
   }
 };
 
-export const saveScoreRecord = (
+export const getStoredHistory = async (): Promise<VideoScoreRecord[]> => {
+  const records = await tryHistoryRequest<VideoScoreRecord[]>("GET");
+  return records.map(normalizeScoreRecord);
+};
+
+export const saveScoreRecord = async (
   record: Omit<VideoScoreRecord, "id" | "percentage" | "completedAt"> & {
     completedAt?: string;
   }
-): VideoScoreRecord[] => {
+): Promise<VideoScoreRecord[]> => {
   const completedAt = record.completedAt ?? new Date().toISOString();
   const percentage =
     record.totalQuestions > 0
       ? Math.round((record.score / record.totalQuestions) * 100)
       : 0;
 
-  const nextEntry: VideoScoreRecord = {
+  const payload = JSON.stringify({
     id: `${record.videoId}-${Date.now()}`,
     videoId: record.videoId,
     videoName: record.videoName,
@@ -61,18 +73,12 @@ export const saveScoreRecord = (
     score: record.score,
     totalQuestions: record.totalQuestions,
     percentage,
-  };
+  });
 
-  const nextHistory = [nextEntry, ...getStoredHistory()];
-
-  if (hasWindow()) {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory));
-  }
-
-  return nextHistory;
+  const records = await tryHistoryRequest<VideoScoreRecord[]>("POST", payload);
+  return records.map(normalizeScoreRecord);
 };
 
-export const clearStoredHistory = () => {
-  if (!hasWindow()) return;
-  window.localStorage.removeItem(STORAGE_KEY);
+export const clearStoredHistory = async () => {
+  await tryHistoryRequest<{ status: string }>("DELETE");
 };
