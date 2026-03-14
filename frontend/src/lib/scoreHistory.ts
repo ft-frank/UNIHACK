@@ -8,71 +8,45 @@ export type VideoScoreRecord = {
   percentage: number;
 };
 
-const STORAGE_KEY = "unihack.videoScoreHistory";
+const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
-const hasWindow = () => typeof window !== "undefined";
+export const getStoredHistory = async (): Promise<VideoScoreRecord[]> => {
+  const response = await fetch(`${apiBase}/scores`);
 
-export const getStoredHistory = (): VideoScoreRecord[] => {
-  if (!hasWindow()) return [];
-
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-
-    const parsed = JSON.parse(raw) as VideoScoreRecord[];
-    if (!Array.isArray(parsed)) return [];
-
-    return parsed
-      .filter(
-        (entry) =>
-          entry &&
-          typeof entry.videoId === "string" &&
-          typeof entry.videoName === "string" &&
-          typeof entry.completedAt === "string" &&
-          typeof entry.score === "number" &&
-          typeof entry.totalQuestions === "number" &&
-          typeof entry.percentage === "number"
-      )
-      .sort(
-        (a, b) =>
-          new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
-      );
-  } catch {
-    return [];
+  if (!response.ok) {
+    throw new Error("Failed to load score history");
   }
+
+  return response.json();
 };
 
-export const saveScoreRecord = (
+export const saveScoreRecord = async (
   record: Omit<VideoScoreRecord, "id" | "percentage" | "completedAt"> & {
     completedAt?: string;
   }
-): VideoScoreRecord[] => {
-  const completedAt = record.completedAt ?? new Date().toISOString();
-  const percentage =
-    record.totalQuestions > 0
-      ? Math.round((record.score / record.totalQuestions) * 100)
-      : 0;
+): Promise<VideoScoreRecord> => {
+  const response = await fetch(`${apiBase}/scores`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...record,
+      completedAt: record.completedAt ?? new Date().toISOString(),
+    }),
+  });
 
-  const nextEntry: VideoScoreRecord = {
-    id: `${record.videoId}-${Date.now()}`,
-    videoId: record.videoId,
-    videoName: record.videoName,
-    completedAt,
-    score: record.score,
-    totalQuestions: record.totalQuestions,
-    percentage,
-  };
-
-  const nextHistory = [nextEntry, ...getStoredHistory()];
-
-  if (hasWindow()) {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory));
+  if (!response.ok) {
+    throw new Error("Failed to save score history");
   }
 
-  return nextHistory;
+  return response.json();
 };
 
-export const clearStoredHistory = () => {
-  if (!hasWindow()) return;
-  window.localStorage.removeItem(STORAGE_KEY);
+export const clearStoredHistory = async () => {
+  const response = await fetch(`${apiBase}/scores`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to clear score history");
+  }
 };

@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import sqlite3
 from threading import Lock, Thread
 from typing import Any
 
@@ -31,6 +32,7 @@ app.add_middleware(
 
 DOWNLOADS_DIR = "downloads"
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+DB_PATH = os.path.join(os.path.dirname(__file__), "score_history.db")
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -44,6 +46,56 @@ class QuestionRequest(BaseModel):
     frequency: str = "3-5"
     specificGroups: str = ""
     specificSounds: str = ""
+
+
+class ScoreRecordCreate(BaseModel):
+    videoId: str
+    videoName: str
+    completedAt: str
+    score: int
+    totalQuestions: int
+
+
+def get_db_connection() -> sqlite3.Connection:
+    connection = sqlite3.connect(DB_PATH)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def init_db() -> None:
+    connection = get_db_connection()
+    try:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS score_history (
+                id TEXT PRIMARY KEY,
+                video_id TEXT NOT NULL,
+                video_name TEXT NOT NULL,
+                completed_at TEXT NOT NULL,
+                score INTEGER NOT NULL,
+                total_questions INTEGER NOT NULL,
+                percentage INTEGER NOT NULL
+            )
+            """
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def serialize_score_row(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "videoId": row["video_id"],
+        "videoName": row["video_name"],
+        "completedAt": row["completed_at"],
+        "score": row["score"],
+        "totalQuestions": row["total_questions"],
+        "percentage": row["percentage"],
+    }
+
+
+init_db()
 
 
 jobs_lock = Lock()
@@ -106,6 +158,31 @@ def transcribe(audio_file: str):
     return transcript
 
 
+def get_transcript_duration_seconds(transcript) -> int:
+    if getattr(transcript, "audio_duration", None):
+        return max(1, int(transcript.audio_duration // 1000))
+
+    if transcript.utterances:
+        return max(1, int(transcript.utterances[-1].end // 1000))
+
+    words = transcript.words or []
+    if words:
+        return max(1, int(words[-1].end // 1000))
+
+    return 60
+
+
+def calculate_question_count(duration_seconds: int, frequency: str) -> int:
+    base_count = max(2, round(duration_seconds / 90))
+    frequency_multiplier = {
+        "3-5": 0.8,
+        "5-10": 1.0,
+        "10-15": 1.35,
+    }.get(frequency, 1.0)
+    adjusted_count = round(base_count * frequency_multiplier)
+    return max(2, min(20, adjusted_count))
+
+
 def generate_questions(transcript, difficulty: str = "Beginner", frequency: str = "3-5", specific_groups: str = "", specific_sounds: str = "") -> list:
     # Build a condensed transcript with timestamps for Claude
     lines = []
@@ -125,7 +202,8 @@ def generate_questions(transcript, difficulty: str = "Beginner", frequency: str 
 
     timed_transcript = "\n".join(lines)
 
-    num_questions = frequency.split("-")[1] if "-" in frequency else "5"
+    duration_seconds = get_transcript_duration_seconds(transcript)
+    num_questions = calculate_question_count(duration_seconds, frequency)
     extra_instructions = []
     if specific_groups:
         extra_instructions.append(f"- Focus questions on the phonetic group: {specific_groups}")
@@ -139,12 +217,15 @@ Given this transcript (with timestamps in seconds):
 
 {timed_transcript}
 
-Generate {num_questions} multiple-choice questions spread throughout the video. Each question should:
+The video is approximately {duration_seconds} seconds long.
+
+Generate exactly {num_questions} multiple-choice questions spread throughout the video. Each question should:
 - Be appropriate for a {difficulty} level learner
 - Test comprehension of something mentioned in the transcript
 - Have exactly 4 answer choices (a, b, c, d)
 - Have one correct answer
 - Use a timestamp (in seconds) that is AFTER the relevant content was spoken
+- Scale naturally to the video length, with fewer questions for short videos and more for longer videos
 {extra}
 
 Return ONLY a JSON array with this exact structure, no other text:
@@ -273,3 +354,68 @@ def get_questions_job(job_id: str):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/scores")
+def get_scores():
+    connection = get_db_connection()
+    try:
+        rows = connection.execute(
+            """
+            SELECT id, video_id, video_name, completed_at, score, total_questions, percentage
+            FROM score_history
+            ORDER BY datetime(completed_at) DESC, id DESC
+            """
+        ).fetchall()
+        return [serialize_score_row(row) for row in rows]
+    finally:
+        connection.close()
+
+
+@app.post("/scores")
+def create_score(record: ScoreRecordCreate):
+    percentage = round((record.score / record.totalQuestions) * 100) if record.totalQuestions > 0 else 0
+    record_id = str(uuid.uuid4())
+
+    connection = get_db_connection()
+    try:
+        connection.execute(
+            """
+            INSERT INTO score_history (
+                id, video_id, video_name, completed_at, score, total_questions, percentage
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record_id,
+                record.videoId,
+                record.videoName,
+                record.completedAt,
+                record.score,
+                record.totalQuestions,
+                percentage,
+            ),
+        )
+        connection.commit()
+
+        row = connection.execute(
+            """
+            SELECT id, video_id, video_name, completed_at, score, total_questions, percentage
+            FROM score_history
+            WHERE id = ?
+            """,
+            (record_id,),
+        ).fetchone()
+        return serialize_score_row(row)
+    finally:
+        connection.close()
+
+
+@app.delete("/scores")
+def delete_scores():
+    connection = get_db_connection()
+    try:
+        connection.execute("DELETE FROM score_history")
+        connection.commit()
+        return {"status": "cleared"}
+    finally:
+        connection.close()

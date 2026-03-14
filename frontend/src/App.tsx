@@ -53,13 +53,21 @@ export default function App() {
   const videoTitleRef = useRef("");
 
   useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        setHistory(await getStoredHistory());
+      } catch (error) {
+        console.error("Failed to load score history", error);
+      }
+    };
+
     if (!window.YT) {
       const tag = document.createElement("script");
       tag.src = "https://www.youtube.com/iframe_api";
       document.body.appendChild(tag);
     }
 
-    setHistory(getStoredHistory());
+    void loadHistory();
   }, []);
 
   useEffect(() => {
@@ -96,24 +104,31 @@ export default function App() {
     }
   };
 
-  const handleVideoComplete = () => {
+  const handleVideoComplete = async () => {
     if (hasRecordedCompletionRef.current || !videoId) return;
 
     hasRecordedCompletionRef.current = true;
 
-    const nextHistory = saveScoreRecord({
-      videoId,
-      videoName:
-        playerRef.current?.getVideoData?.().title ||
-        videoTitleRef.current ||
-        `Video ${videoId}`,
-      completedAt: new Date().toISOString(),
-      score: scoreRef.current,
-      totalQuestions: questionsRef.current.length,
-    });
+    try {
+      const savedRecord = await saveScoreRecord({
+        videoId,
+        videoName:
+          playerRef.current?.getVideoData?.().title ||
+          videoTitleRef.current ||
+          `Video ${videoId}`,
+        completedAt: new Date().toISOString(),
+        score: scoreRef.current,
+        totalQuestions: questionsRef.current.length,
+      });
 
-    setVideoTitle(playerRef.current?.getVideoData?.().title || videoTitleRef.current);
-    setHistory(nextHistory);
+      setVideoTitle(
+        playerRef.current?.getVideoData?.().title || videoTitleRef.current
+      );
+      setHistory((current) => [savedRecord, ...current]);
+    } catch (error) {
+      console.error("Failed to save score history", error);
+      hasRecordedCompletionRef.current = false;
+    }
   };
 
   useEffect(() => {
@@ -143,7 +158,7 @@ export default function App() {
           stopPolling();
 
           if (event.data === window.YT.PlayerState.ENDED) {
-            handleVideoComplete();
+            void handleVideoComplete();
           }
         },
       },
@@ -242,9 +257,13 @@ export default function App() {
     startPolling();
   };
 
-  const handleClearHistory = () => {
-    clearStoredHistory();
-    setHistory([]);
+  const handleClearHistory = async () => {
+    try {
+      await clearStoredHistory();
+      setHistory([]);
+    } catch (error) {
+      console.error("Failed to clear score history", error);
+    }
   };
 
   return (
@@ -286,9 +305,9 @@ export default function App() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
-              UNIHACK
+              EchoLearn
             </p>
-            <h2 className="mt-2 text-2xl font-bold">Learning Hub</h2>
+            <h2 className="mt-2 text-2xl font-bold">EchoLearn</h2>
           </div>
           <button
             onClick={() => setIsNavOpen(false)}
@@ -356,7 +375,7 @@ export default function App() {
           </p>
           <h1 className="mt-1 text-xl font-bold text-slate-800">
             {activePage === "dashboard"
-              ? "YouTube Interactive Quiz"
+              ? "EchoLearn"
               : "Performance Overview"}
           </h1>
         </div>
@@ -452,12 +471,6 @@ export default function App() {
                 )}
               </div>
 
-              {!loading && videoId && (
-                <p className="mt-4 text-sm font-medium text-slate-500">
-                  Pause the video to reveal quiz questions. Finishing the video
-                  saves this score to your local results database.
-                </p>
-              )}
             </div>
 
             <div className="flex w-full flex-col lg:col-span-4">

@@ -2,7 +2,7 @@ import type { VideoScoreRecord } from "../lib/scoreHistory";
 
 type StatisticsPageProps = {
   history: VideoScoreRecord[];
-  onClearHistory: () => void;
+  onClearHistory: () => void | Promise<void>;
 };
 
 const formatDateTime = (value: string) =>
