@@ -3,6 +3,7 @@ import json
 import uuid
 import yt_dlp
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import assemblyai as aai
@@ -12,10 +13,18 @@ load_dotenv()
 
 app = FastAPI()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 DOWNLOADS_DIR = "downloads"
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
-YOUTUBE_URL = "https://www.youtube.com/watch?v=-jYfC4YYXIw"
+YOUTUBE_URL = "https://www.youtube.com/watch?v=-jYfC4YYXIwx"
 aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
 anthropic_client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
@@ -56,31 +65,23 @@ def extract_difficult_words(transcript_data: dict) -> list:
         for w in words
     ])
 
-    prompt = f"""You are a language and phonetics expert. Given a transcript and its word-level timestamps, identify the 20 most phonetically difficult words for a non-native English speaker to pronounce.
+    prompt = f"""Identify the 20 hardest words to hear for a cochlear implant listener from this transcript. Mix of: easily confused short words (e.g. "this"/"these", "then"/"than") and long complex words. Prioritise words that sound similar to common alternatives.
 
-Phonetically difficult words include those with:
-- Unusual or irregular pronunciation patterns
-- Silent letters
-- Uncommon vowel combinations
-- Difficult consonant clusters
-- Stress patterns that differ from spelling expectations
+Transcript: {transcript_text}
 
-Transcript:
-{transcript_text}
+Word timestamps (ms): {words_with_timestamps}
 
-Words with timestamps (milliseconds):
-{words_with_timestamps}
+Return ONLY a JSON array of 20 objects with fields:
+- "word": as it appears in transcript
+- "start_ms": start timestamp
+- "end_ms": end timestamp
+- "similar_words": 3 words that sound similar (MCQ distractors)
 
-Return ONLY a JSON array of exactly 20 objects. Each object must have:
-- "word": the word as it appears in the transcript
-- "start_ms": the start timestamp in milliseconds
-- "end_ms": the end timestamp in milliseconds
-
-Return only the JSON array, no explanation."""
+JSON only, no explanation."""
 
     message = anthropic_client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=1024,
+        max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
 
