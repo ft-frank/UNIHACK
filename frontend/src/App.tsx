@@ -253,6 +253,15 @@ export default function App() {
     startPolling();
   };
 
+  const rewindAndContinue = () => {
+    setCurrentQuestion(null);
+    setFeedback(null);
+    const current = playerRef.current?.getCurrentTime?.() ?? 0;
+    playerRef.current?.seekTo(Math.max(0, current - 5), true);
+    playerRef.current?.playVideo();
+    startPolling();
+  };
+
   const handleClearHistory = () => {
     clearStoredHistory();
     setHistory([]);
@@ -518,6 +527,14 @@ export default function App() {
                         >
                           Continue Video
                         </button>
+                        {feedback !== "Correct!" && (
+                          <button
+                            onClick={rewindAndContinue}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                          >
+                            ↺ Rewind 5 seconds
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
