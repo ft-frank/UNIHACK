@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import Settings, { type UserSettings } from "./components/settings";
 import StatisticsPage from "./components/StatisticsPage";
+import PastAttemptsPage from "./components/PastAttemptsPage";
 import {
   clearStoredHistory,
   getStoredHistory,
@@ -8,7 +9,7 @@ import {
   type VideoScoreRecord,
 } from "./lib/scoreHistory";
 import type { Question, QuestionsJob } from "./questions";
-import { createQuestionsJob, getQuestionsJob } from "./questions";
+import { createQuestionsJob, getQuestionsJob, submitQuestionResult } from "./questions";
 
 declare global {
   interface Window {
@@ -20,7 +21,7 @@ declare global {
 const POLL_INTERVAL_MS = 1500;
 
 export default function App() {
-  const [activePage, setActivePage] = useState<"dashboard" | "statistics">(
+  const [activePage, setActivePage] = useState<"dashboard" | "statistics" | "past-attempts">(
     "dashboard"
   );
   const [isNavOpen, setIsNavOpen] = useState(false);
@@ -30,6 +31,10 @@ export default function App() {
   const [videoTitle, setVideoTitle] = useState("");
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [questionPhase, setQuestionPhase] = useState<
+    "answering" | "awaiting-hint" | "replaying-hint" | "second-attempt" | "resolved"
+  >("answering");
+  const [hintUsed, setHintUsed] = useState(false);
   const [score, setScore] = useState(0);
   const [answeredCount, setAnsweredCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -59,6 +64,11 @@ export default function App() {
   const hasRecordedCompletionRef = useRef(false);
   const scoreRef = useRef(0);
   const videoTitleRef = useRef("");
+  const currentQuestionRef = useRef<Question | null>(null);
+  const hintReplayActiveRef = useRef(false);
+  const questionPauseTimeRef = useRef<number | null>(null);
+  const hintReplayTimeoutRef = useRef<number | null>(null);
+  const resolveTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!window.YT) {
@@ -78,22 +88,47 @@ export default function App() {
     videoTitleRef.current = videoTitle;
   }, [videoTitle]);
 
+  useEffect(() => {
+    currentQuestionRef.current = currentQuestion;
+  }, [currentQuestion]);
+
+  useEffect(() => {
+    return () => {
+      if (hintReplayTimeoutRef.current) {
+        window.clearTimeout(hintReplayTimeoutRef.current);
+      }
+      if (resolveTimeoutRef.current) {
+        window.clearTimeout(resolveTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const startPolling = () => {
     stopPolling();
     intervalRef.current = window.setInterval(() => {
       if (!playerRef.current) return;
 
-      const currentTime = Math.floor(playerRef.current.getCurrentTime());
+      const currentTime = playerRef.current.getCurrentTime();
+      const currentSecond = Math.floor(currentTime);
+
+      if (hintReplayActiveRef.current) {
+        return;
+      }
+
       const question = questionsRef.current.find(
         (entry) =>
-          currentTime >= entry.timestamp &&
+          currentSecond >= entry.timestamp &&
           !processedRef.current.includes(entry.timestamp)
       );
 
       if (question) {
         processedRef.current.push(question.timestamp);
+        questionPauseTimeRef.current = currentTime;
         playerRef.current.pauseVideo();
         setCurrentQuestion(question);
+        setQuestionPhase("answering");
+        setHintUsed(false);
+        setFeedback(null);
       }
     }, 200);
   };
@@ -144,6 +179,7 @@ export default function App() {
             setVideoTitle(
               playerRef.current?.getVideoData?.().title ?? "Current video"
             );
+            if (hintReplayActiveRef.current) return;
             startPolling();
             return;
           }
@@ -200,6 +236,10 @@ export default function App() {
     hasRecordedCompletionRef.current = false;
     setCurrentQuestion(null);
     setFeedback(null);
+    setQuestionPhase("answering");
+    setHintUsed(false);
+    questionPauseTimeRef.current = null;
+    hintReplayActiveRef.current = false;
     setScore(0);
     setAnsweredCount(0);
     setVideoTitle("");
@@ -230,36 +270,109 @@ export default function App() {
     }
   };
 
+  const reportQuestionResult = (question: Question, isCorrect: boolean) => {
+    if (!videoId) return;
+
+    submitQuestionResult(
+      videoId,
+      question.timestamp,
+      isCorrect,
+      question.word,
+      question.phoneticCategory
+    ).catch(console.error);
+  };
+
   const handleAnswerClick = (index: number) => {
     if (!currentQuestion) return;
 
     setAnsweredCount((previous) => previous + 1);
+    const isCorrect = index === currentQuestion.answerIndex;
 
-    if (index === currentQuestion.answerIndex) {
+    if (isCorrect) {
+      reportQuestionResult(currentQuestion, true);
       setFeedback("Correct!");
+      setQuestionPhase("resolved");
       setScore((previous) => previous + 1);
+      scheduleContinue();
       return;
     }
 
+    if (!hintUsed) {
+      setFeedback("Incorrect. Use Hint to replay the last 5 seconds, then try once more.");
+      setQuestionPhase("awaiting-hint");
+      return;
+    }
+
+    reportQuestionResult(currentQuestion, false);
     setFeedback(
       `Incorrect. Answer: ${currentQuestion.choices[currentQuestion.answerIndex]}`
     );
+    setQuestionPhase("resolved");
+    scheduleContinue();
+  };
+
+  const handleHintClick = () => {
+    const activeQuestion = currentQuestionRef.current;
+    if (!activeQuestion || !playerRef.current || hintUsed) return;
+
+    const currentTime =
+      playerRef.current.getCurrentTime?.() ??
+      questionPauseTimeRef.current ??
+      activeQuestion.timestamp;
+    const rewindTime = Math.max(0, currentTime - 5);
+    const replayStopTime = questionPauseTimeRef.current ?? currentTime;
+    const replayDurationMs = Math.max(
+      250,
+      Math.round((replayStopTime - rewindTime) * 1000)
+    );
+
+    setHintUsed(true);
+    setQuestionPhase("replaying-hint");
+    setFeedback("Replaying the last 5 seconds...");
+    hintReplayActiveRef.current = true;
+    if (hintReplayTimeoutRef.current) {
+      window.clearTimeout(hintReplayTimeoutRef.current);
+    }
+    playerRef.current.seekTo(rewindTime, true);
+    playerRef.current.playVideo();
+    startPolling();
+    hintReplayTimeoutRef.current = window.setTimeout(() => {
+      hintReplayTimeoutRef.current = null;
+      hintReplayActiveRef.current = false;
+      playerRef.current?.pauseVideo();
+      setQuestionPhase("second-attempt");
+      setFeedback("Replay complete. Choose your answer.");
+    }, replayDurationMs);
   };
 
   const continueVideo = () => {
+    if (hintReplayTimeoutRef.current) {
+      window.clearTimeout(hintReplayTimeoutRef.current);
+      hintReplayTimeoutRef.current = null;
+    }
+    if (resolveTimeoutRef.current) {
+      window.clearTimeout(resolveTimeoutRef.current);
+      resolveTimeoutRef.current = null;
+    }
     setCurrentQuestion(null);
     setFeedback(null);
+    setQuestionPhase("answering");
+    setHintUsed(false);
+    hintReplayActiveRef.current = false;
+    questionPauseTimeRef.current = null;
     playerRef.current?.playVideo();
     startPolling();
   };
 
-  const rewindAndContinue = () => {
-    setCurrentQuestion(null);
-    setFeedback(null);
-    const current = playerRef.current?.getCurrentTime?.() ?? 0;
-    playerRef.current?.seekTo(Math.max(0, current - 5), true);
-    playerRef.current?.playVideo();
-    startPolling();
+  const scheduleContinue = () => {
+    if (resolveTimeoutRef.current) {
+      window.clearTimeout(resolveTimeoutRef.current);
+    }
+
+    resolveTimeoutRef.current = window.setTimeout(() => {
+      resolveTimeoutRef.current = null;
+      continueVideo();
+    }, 1200);
   };
 
   const handleClearHistory = () => {
@@ -349,6 +462,14 @@ export default function App() {
               setIsNavOpen(false);
             }}
           />
+          <NavButton
+            label="Past Attempts"
+            active={activePage === "past-attempts"}
+            onClick={() => {
+              setActivePage("past-attempts");
+              setIsNavOpen(false);
+            }}
+          />
         </nav>
 
         <div className="mt-auto rounded-[24px] border border-white/10 bg-white/5 p-4">
@@ -373,12 +494,18 @@ export default function App() {
       <header className="flex items-center justify-between border-b border-slate-200/80 px-20 py-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.24em] text-sky-700">
-            {activePage === "dashboard" ? "Dashboard" : "Statistics"}
+            {activePage === "dashboard"
+              ? "Dashboard"
+              : activePage === "statistics"
+              ? "Statistics"
+              : "Past Attempts"}
           </p>
           <h1 className="mt-1 text-xl font-bold text-slate-800">
             {activePage === "dashboard"
               ? "YouTube Interactive Quiz"
-              : "Performance Overview"}
+              : activePage === "statistics"
+              ? "Performance Overview"
+              : "History Log"}
           </h1>
         </div>
 
@@ -491,26 +618,14 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="flex min-h-[220px] flex-col justify-center rounded-[28px] border border-slate-200 bg-white/85 p-8 shadow-sm">
+              <div className="flex min-h-[220px] flex-col rounded-[28px] border border-slate-200 bg-white/85 p-8 shadow-sm">
                 {currentQuestion ? (
-                  <div className="flex flex-col">
+                  <div className="flex flex-col gap-4">
                     <h3 className="mb-5 text-center text-lg font-bold text-slate-800">
                       {currentQuestion.question}
                     </h3>
 
-                    {!feedback ? (
-                      <div className="flex flex-col gap-3">
-                        {currentQuestion.choices.map((choice, index) => (
-                          <button
-                            key={index}
-                            onClick={() => handleAnswerClick(index)}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-800 hover:bg-slate-50"
-                          >
-                            {choice}
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
+                    {questionPhase === "resolved" ? (
                       <div className="flex flex-col items-center gap-3">
                         <p
                           className={`text-base font-bold ${
@@ -521,25 +636,64 @@ export default function App() {
                         >
                           {feedback}
                         </p>
-                        <button
-                          onClick={continueVideo}
-                          className="mt-2 w-full rounded-2xl bg-[#0b0f19] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-800"
-                        >
-                          Continue Video
-                        </button>
-                        {feedback !== "Correct!" && (
-                          <button
-                            onClick={rewindAndContinue}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+                        <p className="text-sm font-medium text-slate-500">
+                          Moving to the next question...
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-3">
+                        {feedback && (
+                          <p
+                            className={`text-center text-sm font-semibold ${
+                              questionPhase === "awaiting-hint"
+                                ? "text-amber-600"
+                                : "text-slate-500"
+                            }`}
                           >
-                            ↺ Rewind 5 seconds
-                          </button>
+                            {feedback}
+                          </p>
                         )}
+                        {currentQuestion.choices.map((choice, index) => (
+                          <button
+                            key={index}
+                            onClick={() => handleAnswerClick(index)}
+                            disabled={
+                              questionPhase === "awaiting-hint" ||
+                              questionPhase === "replaying-hint"
+                            }
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 transition-all hover:border-slate-800 hover:bg-slate-50"
+                          >
+                            {choice}
+                          </button>
+                        ))}
+                        <div className="mt-2 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-sky-900">
+                                Need a hint?
+                              </p>
+                              <p className="text-xs text-sky-700">
+                                Rewinds 5 seconds and replays once for this question.
+                              </p>
+                            </div>
+                            <button
+                              onClick={handleHintClick}
+                              disabled={hintUsed || questionPhase === "replaying-hint"}
+                              className="w-full rounded-xl border border-sky-300 bg-white px-4 py-2 text-sm font-semibold text-sky-700 transition-colors hover:bg-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 sm:w-auto"
+                            >
+                              {questionPhase === "replaying-hint"
+                                ? "Replaying..."
+                                : hintUsed
+                                ? "Hint Used"
+                                : "Hint"}
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <p className="text-center text-sm font-medium text-slate-500/80">
+                  <p className="my-auto text-center text-sm font-medium text-slate-500/80">
                     {loading
                       ? `${generationStage} (${generationProgress}%)`
                       : videoId
@@ -564,12 +718,16 @@ export default function App() {
             </div>
           </main>
         </>
-      ) : (
+      ) : activePage === "statistics" ? (
         <main className="mx-auto max-w-[1600px] px-6 py-8">
           <StatisticsPage
             history={history}
             onClearHistory={handleClearHistory}
           />
+        </main>
+      ) : (
+        <main className="mx-auto max-w-[1600px] px-6 py-8">
+          <PastAttemptsPage history={history} />
         </main>
       )}
     </div>

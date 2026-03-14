@@ -1,7 +1,4 @@
-FROM python:3.12-slim
-
-# Install ffmpeg (required by yt-dlp for audio extraction)
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+FROM python:3.12-slim-bookworm
 
 WORKDIR /app
 

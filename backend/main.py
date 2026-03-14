@@ -2,7 +2,9 @@ import os
 import json
 import uuid
 from threading import Lock, Thread
-from typing import Any
+from typing import Any, List, Optional
+from datetime import datetime
+from pathlib import Path
 
 import yt_dlp
 from fastapi import FastAPI, HTTPException
@@ -46,6 +48,25 @@ class QuestionRequest(BaseModel):
     specificGroups: str = ""
     specificSounds: str = ""
 
+class UserProgress(BaseModel):
+    userId: str
+    totalQuestions: int = 0
+    correctAnswers: int = 0
+    phoneticErrors: dict = {}
+    wordErrors: dict = {}
+    proficiencyLevel: str = "Beginner"
+    lastUpdated: str = ""
+
+class QuestionResult(BaseModel):
+    videoId: str
+    timestamp: int
+    correct: bool
+    word: Optional[str] = None
+    phoneticCategory: Optional[str] = None
+
+DATA_DIR = "data"
+os.makedirs(DATA_DIR, exist_ok=True)
+
 
 jobs_lock = Lock()
 jobs: dict[str, dict[str, Any]] = {}
@@ -65,21 +86,97 @@ def get_job(job_id: str) -> dict[str, Any]:
         return dict(job)
 
 
+# Data storage functions
+def get_user_progress(user_id: str = "default_user") -> UserProgress:
+    """Load user progress from file"""
+    progress_file = Path(DATA_DIR) / f"{user_id}_progress.json"
+    if progress_file.exists():
+        try:
+            with open(progress_file, 'r') as f:
+                data = json.load(f)
+                return UserProgress(**data)
+        except Exception:
+            pass
+    return UserProgress(userId=user_id)
+
+
+def save_user_progress(progress: UserProgress):
+    """Save user progress to file"""
+    progress_file = Path(DATA_DIR) / f"{progress.userId}_progress.json"
+    progress.lastUpdated = datetime.now().isoformat()
+    with open(progress_file, 'w') as f:
+        json.dump(progress.dict(), f, indent=2)
+
+
+def save_question_result(result: QuestionResult):
+    """Save a question result and update user progress"""
+    results_file = Path(DATA_DIR) / f"{result.videoId}_results.json"
+    
+    # Load existing results
+    results = []
+    if results_file.exists():
+        try:
+            with open(results_file, 'r') as f:
+                results = json.load(f)
+        except Exception:
+            results = []
+    
+    # Add new result
+    results.append(result.dict())
+    
+    # Save results
+    with open(results_file, 'w') as f:
+        json.dump(results, f, indent=2)
+    
+    # Update user progress
+    progress = get_user_progress()
+    progress.totalQuestions += 1
+    if result.correct:
+        progress.correctAnswers += 1
+    
+    # Track phonetic errors
+    if not result.correct and result.phoneticCategory:
+        progress.phoneticErrors[result.phoneticCategory] = progress.phoneticErrors.get(result.phoneticCategory, 0) + 1
+    
+    # Track word errors
+    if not result.correct and result.word:
+        progress.wordErrors[result.word] = progress.wordErrors.get(result.word, 0) + 1
+    
+    # Update proficiency level
+    accuracy = progress.correctAnswers / progress.totalQuestions if progress.totalQuestions > 0 else 0
+    if accuracy >= 0.8:
+        progress.proficiencyLevel = "Advanced"
+    elif accuracy >= 0.6:
+        progress.proficiencyLevel = "Intermediate"
+    else:
+        progress.proficiencyLevel = "Beginner"
+    
+    save_user_progress(progress)
+
+
+def get_question_results(video_id: str) -> List[QuestionResult]:
+    """Get all question results for a video"""
+    results_file = Path(DATA_DIR) / f"{video_id}_results.json"
+    if results_file.exists():
+        try:
+            with open(results_file, 'r') as f:
+                data = json.load(f)
+                return [QuestionResult(**r) for r in data]
+        except Exception:
+            pass
+    return []
+
+
 def download_audio(url: str) -> str:
     output_path = os.path.join(DOWNLOADS_DIR, f"{uuid.uuid4()}.%(ext)s")
-    mp3_file = {}
+    downloaded_file: dict[str, str] = {}
 
     def hook(d):
         if d["status"] == "finished":
-            mp3_file["path"] = d["info_dict"].get("filepath", d["info_dict"].get("_filename", ""))
+            downloaded_file["path"] = d["info_dict"].get("filepath", d["info_dict"].get("_filename", ""))
 
     opts = {
         'format': 'bestaudio/best',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
         'outtmpl': output_path,
         'quiet': True,
         'postprocessor_hooks': [hook],
@@ -88,7 +185,7 @@ def download_audio(url: str) -> str:
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
 
-    path = mp3_file.get("path", "")
+    path = downloaded_file.get("path", "")
     if not path or not os.path.exists(path):
         raise RuntimeError("Audio download failed")
     return path
@@ -137,10 +234,14 @@ def build_word_transcript(transcript) -> str:
     return "\n".join(lines)
 
 
-def generate_questions(transcript, quiz_type: str = "Lecture", difficulty: str = "Beginner", frequency: str = "3-5", specific_groups: str = "", specific_sounds: str = "") -> list:
+def generate_questions(transcript, quiz_type: str = "Lecture", difficulty: str = "Beginner", frequency: str = "3-5", specific_groups: str = "", specific_sounds: str = "", user_progress: Optional[UserProgress] = None) -> list:
     num_questions = frequency.split("-")[1] if "-" in frequency else "5"
 
     timed_transcript = build_transcript_lines(transcript)
+
+    # Adaptive Difficulty Override
+    if user_progress and user_progress.totalQuestions >= 5:
+        difficulty = user_progress.proficiencyLevel
 
     if quiz_type == "Cochlear":
         word_transcript = build_word_transcript(transcript)
@@ -149,6 +250,13 @@ def generate_questions(transcript, quiz_type: str = "Lecture", difficulty: str =
             extra_instructions.append(f"- Prioritise words from the phonetic group: {specific_groups}")
         if specific_sounds:
             extra_instructions.append(f"- Prioritise words containing the sound: {specific_sounds}")
+        
+        # Add adaptive learning instructions based on user progress
+        if user_progress and user_progress.phoneticErrors:
+            error_phonetics = sorted(user_progress.phoneticErrors.items(), key=lambda x: x[1], reverse=True)
+            top_errors = [phonetic for phonetic, count in error_phonetics[:3]]
+            extra_instructions.append(f"- HIGH PRIORITY: Focus on phonetics the user struggles with: {', '.join(top_errors)}")
+        
         extra = "\n".join(extra_instructions)
 
         prompt = f"""You are generating hearing rehabilitation exercises for a cochlear implant or hearing-impaired patient.
@@ -178,7 +286,9 @@ Return ONLY a JSON array with this exact structure, no other text:
     "timestamp": <pause_at time integer seconds>,
     "question": "Which word did the speaker say?",
     "choices": ["<actual word>", "<similar word>", "<similar word>", "<similar word>"],
-    "answerIndex": <index of the actual word, 0-3>
+    "answerIndex": <index of the actual word, 0-3>,
+    "phoneticCategory": "<phonetic category like 'fricatives', 'vowel_contrast', 'minimal_pairs', etc.>",
+    "word": "<the actual target word>"
 }}
 ]"""
 
@@ -249,6 +359,7 @@ def run_generation_job(job_id: str, req: QuestionRequest) -> None:
             stage="Generating questions",
             progress=80,
         )
+        user_progress = get_user_progress()
         questions = generate_questions(
             transcript,
             req.type,
@@ -256,6 +367,7 @@ def run_generation_job(job_id: str, req: QuestionRequest) -> None:
             req.frequency,
             req.specificGroups,
             req.specificSounds,
+            user_progress
         )
 
         update_job(
@@ -293,7 +405,8 @@ def get_questions(req: QuestionRequest):
             os.remove(audio_path)
 
     try:
-        questions = generate_questions(transcript, req.type, req.difficulty, req.frequency, req.specificGroups, req.specificSounds)
+        user_progress = get_user_progress()
+        questions = generate_questions(transcript, req.type, req.difficulty, req.frequency, req.specificGroups, req.specificSounds, user_progress)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Question generation failed: {e}")
 
@@ -325,3 +438,15 @@ def get_questions_job(job_id: str):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.post("/questions/results")
+def submit_question_result(result: QuestionResult):
+    try:
+        save_question_result(result)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/questions/results/{video_id}")
+def get_question_results_endpoint(video_id: str):
+    return get_question_results(video_id)
