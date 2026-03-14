@@ -1,6 +1,9 @@
 import os
 import json
 import uuid
+from threading import Lock, Thread
+from typing import Any
+
 import yt_dlp
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -41,6 +44,24 @@ class QuestionRequest(BaseModel):
     frequency: str = "3-5"
     specificGroups: str = ""
     specificSounds: str = ""
+
+
+jobs_lock = Lock()
+jobs: dict[str, dict[str, Any]] = {}
+
+
+def update_job(job_id: str, **fields: Any) -> None:
+    with jobs_lock:
+        if job_id in jobs:
+            jobs[job_id].update(fields)
+
+
+def get_job(job_id: str) -> dict[str, Any]:
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        return dict(job)
 
 
 def download_audio(url: str) -> str:
@@ -154,6 +175,56 @@ Return ONLY a JSON array with this exact structure, no other text:
     return questions
 
 
+def run_generation_job(job_id: str, req: QuestionRequest) -> None:
+    audio_path = ""
+    try:
+        update_job(
+            job_id,
+            status="running",
+            stage="Downloading audio",
+            progress=10,
+        )
+        audio_path = download_audio(req.url)
+
+        update_job(
+            job_id,
+            stage="Transcribing audio",
+            progress=45,
+        )
+        transcript = transcribe(audio_path)
+
+        update_job(
+            job_id,
+            stage="Generating questions",
+            progress=80,
+        )
+        questions = generate_questions(
+            transcript,
+            req.difficulty,
+            req.frequency,
+            req.specificGroups,
+            req.specificSounds,
+        )
+
+        update_job(
+            job_id,
+            status="completed",
+            stage="Complete",
+            progress=100,
+            questions=questions,
+        )
+    except Exception as e:
+        update_job(
+            job_id,
+            status="failed",
+            stage="Failed",
+            error=str(e),
+        )
+    finally:
+        if audio_path and os.path.exists(audio_path):
+            os.remove(audio_path)
+
+
 @app.post("/questions")
 def get_questions(req: QuestionRequest):
     try:
@@ -175,6 +246,28 @@ def get_questions(req: QuestionRequest):
         raise HTTPException(status_code=500, detail=f"Question generation failed: {e}")
 
     return questions
+
+
+@app.post("/questions/jobs")
+def create_questions_job(req: QuestionRequest):
+    job_id = str(uuid.uuid4())
+    with jobs_lock:
+        jobs[job_id] = {
+            "id": job_id,
+            "status": "queued",
+            "stage": "Queued",
+            "progress": 0,
+            "questions": None,
+            "error": None,
+        }
+
+    Thread(target=run_generation_job, args=(job_id, req), daemon=True).start()
+    return {"jobId": job_id}
+
+
+@app.get("/questions/jobs/{job_id}")
+def get_questions_job(job_id: str):
+    return get_job(job_id)
 
 
 @app.get("/health")
