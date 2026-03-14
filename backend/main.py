@@ -13,7 +13,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://127.0.0.1:5173", "http://127.0.0.1:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -63,8 +63,8 @@ def download_audio(url: str) -> str:
 
 def transcribe(audio_file: str):
     config = aai.TranscriptionConfig(
-        speech_model=aai.SpeechModel.best,
-        language_detection=True,
+        speech_models=["universal-3-pro", "universal-2"],
+        language_code="en",
         punctuate=True,
         format_text=True,
     )
@@ -107,12 +107,12 @@ Generate 5 multiple-choice questions spread throughout the video. Each question 
 
 Return ONLY a JSON array with this exact structure, no other text:
 [
-  {{
+{{
     "timestamp": <integer seconds>,
     "question": "<question text>",
     "choices": ["<choice 0>", "<choice 1>", "<choice 2>", "<choice 3>"],
     "answerIndex": <0-3>
-  }}
+    }}
 ]"""
 
     message = anthropic_client.messages.create(
@@ -135,26 +135,25 @@ Return ONLY a JSON array with this exact structure, no other text:
 
 @app.post("/questions")
 def get_questions(req: QuestionRequest):
-    return [
-        {
-            "timestamp": 10,
-            "question": "What is the main topic of this video?",
-            "choices": ["Option A", "Option B", "Option C", "Option D"],
-            "answerIndex": 0
-        },
-        {
-            "timestamp": 30,
-            "question": "Which concept was introduced second?",
-            "choices": ["Option A", "Option B", "Option C", "Option D"],
-            "answerIndex": 1
-        },
-        {
-            "timestamp": 60,
-            "question": "What did the speaker emphasize?",
-            "choices": ["Option A", "Option B", "Option C", "Option D"],
-            "answerIndex": 2
-        },
-    ]
+    try:
+        audio_path = download_audio(req.url)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Download failed: {e}")
+
+    try:
+        transcript = transcribe(audio_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+    finally:
+        if os.path.exists(audio_path):
+            os.remove(audio_path)
+
+    try:
+        questions = generate_questions(transcript)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Question generation failed: {e}")
+
+    return questions
 
 
 @app.get("/health")

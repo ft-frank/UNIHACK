@@ -12,13 +12,13 @@ export default function App() {
   const [videoId, setVideoId] = useState("");
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const playerRef = useRef<any>(null);
   const intervalRef = useRef<number | null>(null);
   const processedRef = useRef<number[]>([]);
-  
-  // Ref to hold the dynamically fetched questions for the current video
-  const questionsRef = useRef<Question[]>([]); 
+
+  const questionsRef = useRef<Question[]>([]);
 
   // 1. Load YT API
   useEffect(() => {
@@ -38,6 +38,7 @@ export default function App() {
       height: "405",
       width: "720",
       videoId,
+      playerVars: { origin: window.location.origin },
       events: {
         onReady: () => {
           playerRef.current.playVideo();
@@ -57,12 +58,12 @@ export default function App() {
     stopPolling();
     intervalRef.current = window.setInterval(() => {
       if (!playerRef.current) return;
-      
+
       const currentTime = Math.floor(playerRef.current.getCurrentTime());
       const question = questionsRef.current.find(
         (q) => currentTime >= q.timestamp && !processedRef.current.includes(q.timestamp)
       );
-      
+
       if (question) {
         processedRef.current.push(question.timestamp);
         playerRef.current.pauseVideo();
@@ -78,20 +79,25 @@ export default function App() {
   // 4. Handlers
   const handleLoadVideo = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // FETCH DATA FIRST: Call your external function with the URL
-    const fetchedData = await fetchQuestionsForVideo(urlInput);
-    console.log("Questions from /questions:", fetchedData);
-    questionsRef.current = fetchedData;
-    
-    // THEN SET UP VIDEO: Parse the ID and trigger the player
+
     const match = urlInput.match(/v=([a-zA-Z0-9_-]{11})/);
-    if (match) setVideoId(match[1]);
-    
-    // Reset states for the new video
+    if (!match) return;
+
+    // Show video immediately
     processedRef.current = [];
     setCurrentQuestion(null);
     setFeedback(null);
+    setVideoId(match[1]);
+
+    // Fetch questions in background
+    setLoading(true);
+    try {
+      const fetchedData = await fetchQuestionsForVideo(urlInput);
+      console.log("Questions from /questions:", fetchedData);
+      questionsRef.current = fetchedData;
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAnswerClick = (index: number) => {
@@ -110,7 +116,7 @@ export default function App() {
   return (
     <div style={{ padding: 40, fontFamily: "sans-serif" }}>
       <h1>YouTube Interactive Quiz</h1>
-      
+
       <form onSubmit={handleLoadVideo} style={{ marginBottom: 20 }}>
         <input
           value={urlInput}
@@ -123,10 +129,22 @@ export default function App() {
 
       <div id="yt-player" />
 
+      {loading && (
+        <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{
+            width: 24, height: 24, border: "3px solid #ccc",
+            borderTopColor: "#333", borderRadius: "50%",
+            animation: "spin 0.8s linear infinite",
+          }} />
+          <span>Generating questions...</span>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
       {currentQuestion && (
         <div style={{ marginTop: 20 }}>
           <h2>{currentQuestion.question}</h2>
-          
+
           {!feedback ? (
             currentQuestion.choices.map((c, i) => (
               <button key={i} onClick={() => handleAnswerClick(i)} style={{ marginRight: 10, padding: "8px" }}>
