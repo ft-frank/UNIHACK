@@ -4,6 +4,8 @@ import Settings, { type UserSettings } from "./components/settings";
 import StatisticsPage from "./components/StatisticsPage";
 import PastAttemptsPage from "./components/PastAttemptsPage";
 import heroImage from "./assets/hero.png";
+import echolearnLogo from "./assets/echolearn-logo.svg";
+import echolearnMark from "./assets/echolearn-mark.svg";
 import {
   clearStoredHistory,
   getStoredHistory,
@@ -1037,22 +1039,25 @@ export default function App() {
   }
 
   if (!session) {
+    const publicIsDarkMode = isDarkMode;
+
     return (
       <div
         className={`min-h-screen font-sans ${
-          isDarkMode
+          publicIsDarkMode
             ? "bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_35%),linear-gradient(180deg,_#020617_0%,_#0f172a_45%,_#111827_100%)] text-slate-100"
             : "bg-[radial-gradient(circle_at_top,_rgba(125,211,252,0.22),_transparent_35%),linear-gradient(180deg,_#f8fafc_0%,_#eef6ff_42%,_#f8fafc_100%)] text-slate-900"
         }`}
       >
         {authView === "landing" ? (
           <LandingPage
-            isDarkMode={isDarkMode}
+            isDarkMode={publicIsDarkMode}
             onSelectAuth={(nextView) => setAuthView(nextView)}
+            onToggleTheme={() => setIsDarkMode((current) => !current)}
           />
         ) : (
           <AuthPanel
-            isDarkMode={isDarkMode}
+            isDarkMode={publicIsDarkMode}
             onSignIn={handleSignIn}
             onSignUp={handleSignUp}
             initialMode={authView}
@@ -1251,11 +1256,18 @@ export default function App() {
         }`}
       >
         <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
-              Echolearn
-            </p>
+          <div className="flex items-center gap-3">
+            <img
+              src={echolearnMark}
+              alt="EchoLearn"
+              className="h-12 w-12"
+            />
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-300">
+                Echolearn
+              </p>
             <h2 className="mt-2 text-2xl font-bold">Daily Learning Companion</h2>
+            </div>
           </div>
           <button
             onClick={() => setIsNavOpen(false)}
@@ -2148,9 +2160,11 @@ function ScrollReveal({
 function LandingPage({
   isDarkMode,
   onSelectAuth,
+  onToggleTheme,
 }: {
   isDarkMode: boolean;
   onSelectAuth: (mode: "signin" | "signup") => void;
+  onToggleTheme: () => void;
 }) {
   const heroPills = ["Real video", "Live checkpoints", "Adaptive focus"];
   const featureCards = [
@@ -2182,15 +2196,32 @@ function LandingPage({
 
       <div className="sticky top-0 z-30 border-b border-white/10 bg-slate-950/45 backdrop-blur-xl">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-          <div>
-            <p className={`text-xs font-semibold uppercase tracking-[0.34em] ${isDarkMode ? "text-cyan-300" : "text-sky-700"}`}>
-              Echolearn
-            </p>
+          <div className="flex items-center gap-3">
+            <img
+              src={echolearnLogo}
+              alt="EchoLearn"
+              className="h-11 w-auto"
+            />
+            <div>
+              <p className={`text-xs font-semibold uppercase tracking-[0.34em] ${isDarkMode ? "text-cyan-300" : "text-sky-700"}`}>
+                Echolearn
+              </p>
             <p className={`mt-1 text-sm ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
               Interactive listening practice for real-world media
             </p>
+            </div>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={onToggleTheme}
+              className={`rounded-full border px-4 py-2 text-sm font-semibold transition hover:-translate-y-0.5 ${
+                isDarkMode
+                  ? "border-slate-700 bg-slate-900/80 text-slate-100 hover:bg-slate-800"
+                  : "border-slate-200 bg-white/85 text-slate-700 hover:bg-white"
+              }`}
+            >
+              {isDarkMode ? "Light mode" : "Dark mode"}
+            </button>
             <button
               onClick={() => onSelectAuth("signin")}
               className={`rounded-full border px-4 py-2 text-sm font-semibold transition hover:-translate-y-0.5 ${
@@ -2214,7 +2245,12 @@ function LandingPage({
       <main className="mx-auto flex max-w-7xl flex-col gap-8 px-4 pb-16 pt-8 sm:px-6 sm:pb-24 sm:pt-10">
         <section className="grid items-center gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-14">
           <ScrollReveal className="lg:pr-4">
-            <p className={`text-sm font-semibold uppercase tracking-[0.28em] ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}>
+            <img
+              src={echolearnLogo}
+              alt="EchoLearn"
+              className="h-20 w-auto sm:h-24"
+            />
+            <p className={`mt-4 text-sm font-semibold uppercase tracking-[0.28em] ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}>
               Listening, redesigned
             </p>
             <h1 className={`mt-4 max-w-4xl text-4xl font-bold leading-[1.02] sm:text-5xl lg:text-7xl ${isDarkMode ? "text-white" : "text-slate-950"}`}>

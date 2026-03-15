@@ -1,4 +1,5 @@
 import { useState } from "react";
+import echolearnLogo from "../assets/echolearn-logo.svg";
 import type { SignUpResult } from "../lib/auth";
 
 type AuthPanelProps = {
@@ -57,7 +58,12 @@ export default function AuthPanel({
               : "border-slate-200 bg-white/85 text-slate-900"
           }`}
         >
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-emerald-400">
+          <img
+            src={echolearnLogo}
+            alt="EchoLearn"
+            className="h-20 w-auto sm:h-24"
+          />
+          <p className="mt-4 text-sm font-semibold uppercase tracking-[0.28em] text-emerald-400">
             Echolearn
           </p>
           <h1 className="mt-4 text-3xl font-bold leading-tight sm:text-4xl">

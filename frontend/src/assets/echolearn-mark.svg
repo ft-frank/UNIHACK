@@ -1,0 +1,17 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="markFillA" x1="14" y1="18" x2="70" y2="96" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#D8F27A"/>
+      <stop offset="0.48" stop-color="#90D66D"/>
+      <stop offset="1" stop-color="#2E7C68"/>
+    </linearGradient>
+    <linearGradient id="markFillB" x1="54" y1="14" x2="108" y2="106" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B3EA7A"/>
+      <stop offset="0.48" stop-color="#4D9E75"/>
+      <stop offset="1" stop-color="#163F49"/>
+    </linearGradient>
+  </defs>
+  <path d="M8 64H18C26 64 26 49 33 49C42 49 40 83 52 83C66 83 62 17 72 17C82 17 81 61 89 61C97 61 95 106 107 106C119 106 117 17 121 17" stroke="url(#markFillA)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity="0.72"/>
+  <path d="M24 64H38C50 64 48 30 58 30C70 30 72 97 84 97C97 97 98 33 109 33C118 33 117 64 120 64" stroke="url(#markFillB)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity="0.84"/>
+  <path d="M18 64H44C53 64 50 39 58 39C66 39 72 89 81 89C90 89 91 39 101 39C108 39 108 64 112 64" stroke="#1C5057" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

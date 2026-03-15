@@ -394,6 +394,78 @@ def format_adaptive_items(items: list[dict[str, float | str]]) -> str:
     )
 
 
+def build_adaptive_question_plan(
+    adaptive_profile: Optional[dict[str, Any]],
+    num_questions: int,
+) -> dict[str, Any]:
+    if not adaptive_profile or not adaptive_profile.get("total_attempts") or num_questions <= 0:
+        return {
+            "min_weak_focus_questions": 0,
+            "min_weak_category_questions": 0,
+            "max_strong_focus_questions": num_questions,
+            "max_strong_category_questions": num_questions,
+        }
+
+    weak_focuses = adaptive_profile.get("weak_focuses") or []
+    weak_categories = adaptive_profile.get("weak_categories") or []
+    strong_focuses = adaptive_profile.get("strong_focuses") or []
+    strong_categories = adaptive_profile.get("strong_categories") or []
+
+    weak_focus_pressure = min(len(weak_focuses), max(1, round(num_questions * 0.4))) if weak_focuses else 0
+    weak_category_pressure = min(
+        len(weak_categories),
+        max(1, round(num_questions * 0.35))
+    ) if weak_categories else 0
+
+    strong_focus_cap = max(0, round(num_questions * 0.15)) if strong_focuses else num_questions
+    strong_category_cap = max(0, round(num_questions * 0.2)) if strong_categories else num_questions
+
+    return {
+        "min_weak_focus_questions": min(weak_focus_pressure, num_questions),
+        "min_weak_category_questions": min(weak_category_pressure, num_questions),
+        "max_strong_focus_questions": min(strong_focus_cap, num_questions),
+        "max_strong_category_questions": min(strong_category_cap, num_questions),
+    }
+
+
+def build_adaptive_constraints(
+    adaptive_profile: Optional[dict[str, Any]],
+    num_questions: int,
+) -> str:
+    if not adaptive_profile or not adaptive_profile.get("total_attempts"):
+        return ""
+
+    weak_categories = adaptive_profile.get("weak_categories") or []
+    weak_focuses = adaptive_profile.get("weak_focuses") or []
+    strong_categories = adaptive_profile.get("strong_categories") or []
+    strong_focuses = adaptive_profile.get("strong_focuses") or []
+    plan = build_adaptive_question_plan(adaptive_profile, num_questions)
+
+    lines = ["Adaptive selection rules you must follow if the transcript allows it:"]
+
+    if weak_focuses:
+        lines.append(
+            f"- Include at least {plan['min_weak_focus_questions']} question(s) that target these weaker words or phrases: {format_adaptive_items(weak_focuses)}"
+        )
+    if weak_categories:
+        lines.append(
+            f"- Include at least {plan['min_weak_category_questions']} question(s) that target these weaker categories: {format_adaptive_items(weak_categories)}"
+        )
+    if strong_focuses:
+        lines.append(
+            f"- Include at most {plan['max_strong_focus_questions']} question(s) from these stronger words or phrases: {format_adaptive_items(strong_focuses)}"
+        )
+    if strong_categories:
+        lines.append(
+            f"- Include at most {plan['max_strong_category_questions']} question(s) from these stronger categories: {format_adaptive_items(strong_categories)}"
+        )
+
+    lines.append(
+        "- If an exact weak target does not appear naturally in this transcript, choose the closest similar concept, phrase, or sound pattern instead."
+    )
+    return "\n".join(lines)
+
+
 def build_adaptive_guidance(adaptive_profile: Optional[dict[str, Any]]) -> str:
     if not adaptive_profile or not adaptive_profile.get("total_attempts"):
         return ""
@@ -818,8 +890,11 @@ def generate_questions(
             f"- User proficiency history for reference only: {user_progress.proficiencyLevel}"
         )
     adaptive_guidance = build_adaptive_guidance(adaptive_profile)
+    adaptive_constraints = build_adaptive_constraints(adaptive_profile, num_questions)
     if adaptive_guidance:
         settings_summary.append(adaptive_guidance)
+    if adaptive_constraints:
+        settings_summary.append(adaptive_constraints)
 
     settings_block = "\n".join(settings_summary)
 
@@ -838,6 +913,8 @@ def generate_questions(
             extra_instructions.append(f"- HIGH PRIORITY: Focus on phonetics the user struggles with: {', '.join(top_errors)}")
         if adaptive_guidance:
             extra_instructions.append(f"- Follow this adaptive profile when selecting targets:\n{adaptive_guidance}")
+        if adaptive_constraints:
+            extra_instructions.append(f"- Treat these as hard selection constraints when possible:\n{adaptive_constraints}")
         
         extra = "\n".join(extra_instructions)
 
@@ -898,6 +975,7 @@ Question mix rules:
 - If cochlear assessment mode is "multiple-choice", every question must be kind "multiple-choice".
 - If cochlear assessment mode is "fill-in-the-blanks", every question must be kind "fill-in-the-blanks".
 - If cochlear assessment mode is "both", return a balanced mix of both kinds across the full set.
+- You must satisfy the adaptive selection rules below whenever the transcript contains enough relevant material.
 
 For "multiple-choice" questions:
 - Create a question where the patient must identify which word was actually said, given 4 phonetically similar choices.
@@ -959,6 +1037,7 @@ Question mix rules:
 - If assessment style is "multiple-choice", every question must be kind "multiple-choice".
 - If assessment style is "fill-in-the-blanks", every question must be kind "fill-in-the-blanks".
 - If assessment style is "both", return a balanced mix of both kinds across the full set.
+- You must satisfy the adaptive selection rules below whenever the transcript contains enough relevant material.
 
 For "multiple-choice" questions:
 - Test understanding of a concept, fact, or idea from the lecture.
@@ -978,6 +1057,8 @@ Each question should:
 - Be fully answerable from the lecture content alone
 - Avoid trivia that was only mentioned in passing
 - Bias selection toward the user's weak areas and away from already-mastered words, phrases, or categories whenever the transcript allows it
+
+{adaptive_constraints}
 
 Return ONLY a JSON array with this exact structure, no other text:
 [
