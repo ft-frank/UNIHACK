@@ -760,7 +760,7 @@ export default function App() {
       {/* Sidebar */}
       <aside className={`fixed left-0 top-0 z-50 flex h-full w-64 flex-col bg-[#1C1B18] px-5 py-7 text-white shadow-2xl transition-transform duration-300 ${isNavOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="flex items-center justify-between">
-          <span className="font-display text-xl italic text-white">echoLearn</span>
+          <img src="/favicon.png" alt="EchoLearn" className="h-8 w-auto" />
           <button onClick={() => setIsNavOpen(false)} className="p-1.5 text-white/30 transition-colors hover:text-white">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="h-5 w-5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -803,9 +803,12 @@ export default function App() {
 
       {/* Header */}
       <header className="flex items-center justify-between border-b border-[#E2E0DB] px-20 py-4">
-        <h1 className="text-base font-bold text-[#1C1B18]">
-          {activePage === "dashboard" ? "Interactive Quiz" : activePage === "statistics" ? "Performance" : "Past Attempts"}
-        </h1>
+        <div className="flex items-center gap-3">
+          <img src="/favicon.png" alt="EchoLearn" className="h-8 w-auto" />
+          <h1 className="text-base font-bold text-[#1C1B18]">
+            {activePage === "dashboard" ? "Interactive Quiz" : activePage === "statistics" ? "Performance" : "Past Attempts"}
+          </h1>
+        </div>
         <button
           onClick={() => setIsSettingsOpen(true)}
           className="rounded-md p-2 text-[#7A7570] transition-colors hover:bg-[#EEECEA] hover:text-[#1C1B18]"
