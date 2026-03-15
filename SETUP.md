@@ -30,6 +30,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_ANON_KEY=your_supabase_anon_key_here
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+ADMIN_EMAILS=admin@example.com
 VITE_API_URL=http://localhost:8000
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
@@ -48,8 +49,11 @@ This creates:
 - `user_progress`
 - `video_score_history`
 - `question_results`
+- the `is_admin` flag on profiles
 - Row Level Security policies
 - A trigger that auto-creates a profile and progress row whenever a new auth user signs up
+
+If a signed-in user's email appears in `ADMIN_EMAILS`, their profile will bootstrap with administrator access and they can open the in-app admin page to manage accounts and saved data.
 
 ## 4. Configure Supabase authentication
 

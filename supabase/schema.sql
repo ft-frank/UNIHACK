@@ -27,6 +27,7 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   email text,
   username text not null unique,
+  is_admin boolean not null default false,
   theme text not null default 'light',
   settings jsonb not null default jsonb_build_object(
     'type', 'Cochlear',
@@ -39,6 +40,8 @@ create table if not exists public.profiles (
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
+
+alter table public.profiles add column if not exists is_admin boolean not null default false;
 
 create table if not exists public.user_progress (
   user_id uuid primary key references auth.users(id) on delete cascade,

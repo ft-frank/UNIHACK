@@ -3,6 +3,10 @@ import AuthPanel from "./components/AuthPanel";
 import Settings, { type UserSettings } from "./components/settings";
 import StatisticsPage from "./components/StatisticsPage";
 import PastAttemptsPage from "./components/PastAttemptsPage";
+import AdminPage, {
+  type AdminSummary,
+  type AdminUserRecord,
+} from "./components/AdminPage";
 import heroImage from "./assets/hero.png";
 import echolearnLogo from "./assets/echolearn-logo.svg";
 import echolearnMark from "./assets/echolearn-mark.svg";
@@ -149,11 +153,18 @@ const getQuestionPrompt = (question: Question) =>
     ? question.promptSentence || question.sentenceWithBlanks
     : question.question;
 
+type ProfileResponse = {
+  username: string;
+  theme: string;
+  settings: UserSettings;
+  is_admin?: boolean;
+};
+
 export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authView, setAuthView] = useState<"landing" | "signin" | "signup">("landing");
-  const [activePage, setActivePage] = useState<"dashboard" | "statistics" | "past-attempts">(
+  const [activePage, setActivePage] = useState<"dashboard" | "statistics" | "past-attempts" | "admin">(
     "dashboard"
   );
   const [isNavOpen, setIsNavOpen] = useState(false);
@@ -181,6 +192,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [confettiPieces, setConfettiPieces] = useState<ConfettiPiece[]>([]);
   const [username, setUsername] = useState("friend");
+  const [isAdmin, setIsAdmin] = useState(false);
   const [timeOfDayGreeting, setTimeOfDayGreeting] = useState(() =>
     getTimeOfDayGreeting(new Date())
   );
@@ -188,6 +200,10 @@ export default function App() {
   const [isPlantWidgetMinimized, setIsPlantWidgetMinimized] = useState(true);
   const [plantWidgetPosition, setPlantWidgetPosition] = useState({ x: 0, y: 180 });
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
+  const [adminUsers, setAdminUsers] = useState<AdminUserRecord[]>([]);
+  const [adminSummary, setAdminSummary] = useState<AdminSummary | null>(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [adminError, setAdminError] = useState<string | null>(null);
 
   const playerRef = useRef<YouTubePlayer | null>(null);
   const mediaElementRef = useRef<HTMLMediaElement | null>(null);
@@ -253,11 +269,7 @@ export default function App() {
     const hasProfilePath = await backendHasPath("/profile");
     const [profileResult, historyResult] = await Promise.allSettled([
       hasProfilePath
-        ? apiFetch<{
-            username: string;
-            theme: string;
-            settings: UserSettings;
-          }>("/profile")
+        ? apiFetch<ProfileResponse>("/profile")
         : Promise.reject(new Error("Not Found")),
       getStoredHistory(),
     ]);
@@ -266,12 +278,14 @@ export default function App() {
       setUsername(profileResult.value.username || "friend");
       setIsDarkMode(profileResult.value.theme === "dark");
       setSettings(mergeSettings(profileResult.value.settings));
+      setIsAdmin(Boolean(profileResult.value.is_admin));
     } else if (!isRecoverableAccountDataError(profileResult.reason)) {
       throw profileResult.reason;
     } else {
       setUsername(activeSession?.user.username || "friend");
       setIsDarkMode(false);
       setSettings(defaultSettings);
+      setIsAdmin(false);
     }
 
     if (historyResult.status === "fulfilled") {
@@ -280,6 +294,33 @@ export default function App() {
       throw historyResult.reason;
     } else {
       setHistory([]);
+    }
+  }, []);
+
+  const loadAdminData = useCallback(async () => {
+    const hasAdminUsersPath = await backendHasPath("/admin/users");
+    const hasAdminSummaryPath = await backendHasPath("/admin/summary");
+
+    if (!hasAdminUsersPath || !hasAdminSummaryPath) {
+      setAdminUsers([]);
+      setAdminSummary(null);
+      return;
+    }
+
+    setAdminLoading(true);
+    setAdminError(null);
+
+    try {
+      const [users, summary] = await Promise.all([
+        apiFetch<AdminUserRecord[]>("/admin/users"),
+        apiFetch<AdminSummary>("/admin/summary"),
+      ]);
+      setAdminUsers(users);
+      setAdminSummary(summary);
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : "Failed to load admin data.");
+    } finally {
+      setAdminLoading(false);
     }
   }, []);
 
@@ -446,6 +487,14 @@ export default function App() {
 
     return () => window.clearTimeout(timeoutId);
   }, [session, authReady, username, isDarkMode, saveProfileSafely, settings]);
+
+  useEffect(() => {
+    if (!session || !isAdmin || activePage !== "admin") {
+      return;
+    }
+
+    void loadAdminData();
+  }, [activePage, isAdmin, loadAdminData, session]);
 
   useEffect(() => {
     scoreRef.current = score;
@@ -1003,11 +1052,37 @@ export default function App() {
       .catch(console.error);
   };
 
+  const handleAdminRefresh = useCallback(async () => {
+    await loadAdminData();
+  }, [loadAdminData]);
+
+  const handleAdminToggleRole = useCallback(async (userId: string, nextIsAdmin: boolean) => {
+    await apiFetch(`/admin/users/${userId}/role`, {
+      method: "PUT",
+      body: JSON.stringify({ isAdmin: nextIsAdmin }),
+    });
+    await loadAdminData();
+  }, [loadAdminData]);
+
+  const handleAdminResetUserData = useCallback(async (userId: string) => {
+    await apiFetch(`/admin/users/${userId}/data`, {
+      method: "DELETE",
+    });
+    await loadAdminData();
+  }, [loadAdminData]);
+
+  const handleAdminDeleteUser = useCallback(async (userId: string) => {
+    await apiFetch(`/admin/users/${userId}`, {
+      method: "DELETE",
+    });
+    await loadAdminData();
+  }, [loadAdminData]);
+
   const handleSignIn = async (email: string, password: string) => {
     const nextSession = await signInWithEmail(email, password);
     setSession(nextSession);
     setUsername(nextSession.user.username);
-    await loadAccountData();
+    await loadAccountData(nextSession);
   };
 
   const handleSignUp = async (
@@ -1028,7 +1103,7 @@ export default function App() {
       theme: "light",
       settings: defaultSettings,
     });
-    await loadAccountData();
+    await loadAccountData(result.session);
     return result;
   };
 
@@ -1316,6 +1391,16 @@ export default function App() {
               setIsNavOpen(false);
             }}
           />
+          {isAdmin && (
+            <NavButton
+              label="Admin"
+              active={activePage === "admin"}
+              onClick={() => {
+                setActivePage("admin");
+                setIsNavOpen(false);
+              }}
+            />
+          )}
         </nav>
 
         <div className="mt-auto rounded-[24px] border border-white/10 bg-white/5 p-4">
@@ -1352,14 +1437,18 @@ export default function App() {
               ? "Dashboard"
               : activePage === "statistics"
               ? "Statistics"
-              : "Past Attempts"}
+              : activePage === "past-attempts"
+              ? "Past Attempts"
+              : "Admin"}
           </p>
           <h1 className={`mt-1 text-xl font-bold ${isDarkMode ? "text-slate-100" : "text-slate-800"}`}>
             {activePage === "dashboard"
               ? `Good ${timeOfDayGreeting}, ${username}`
               : activePage === "statistics"
               ? "Echolearn Progress"
-              : "Echolearn History"}
+              : activePage === "past-attempts"
+              ? "Echolearn History"
+              : "Administrator Console"}
           </h1>
         </div>
 
@@ -1369,6 +1458,10 @@ export default function App() {
               signOut();
               setSession(null);
               setHistory([]);
+              setIsAdmin(false);
+              setAdminUsers([]);
+              setAdminSummary(null);
+              setAdminError(null);
               setCurrentQuestion(null);
               setVideoId("");
               setPendingVideoId("");
@@ -1764,9 +1857,24 @@ export default function App() {
             isDarkMode={isDarkMode}
           />
         </main>
-      ) : (
+      ) : activePage === "past-attempts" ? (
         <main className="mx-auto max-w-[1600px] px-6 py-8">
           <PastAttemptsPage history={history} isDarkMode={isDarkMode} />
+        </main>
+      ) : (
+        <main className="mx-auto max-w-[1600px] px-6 py-8">
+          <AdminPage
+            isDarkMode={isDarkMode}
+            currentUserId={session.user.id}
+            summary={adminSummary}
+            users={adminUsers}
+            loading={adminLoading}
+            error={adminError}
+            onRefresh={handleAdminRefresh}
+            onToggleRole={handleAdminToggleRole}
+            onResetUserData={handleAdminResetUserData}
+            onDeleteUser={handleAdminDeleteUser}
+          />
         </main>
       )}
     </div>

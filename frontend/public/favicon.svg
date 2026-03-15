@@ -1,17 +1,43 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="mark-a" x1="16" y1="20" x2="67" y2="93" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#D8F27A"/>
-      <stop offset="0.48" stop-color="#8BD56F"/>
-      <stop offset="1" stop-color="#2B7A67"/>
+    <linearGradient id="favBg" x1="16" y1="10" x2="108" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F2F9D1" />
+      <stop offset="1" stop-color="#D7F0D7" />
     </linearGradient>
-    <linearGradient id="mark-b" x1="55" y1="12" x2="100" y2="108" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#B7EB7C"/>
-      <stop offset="0.5" stop-color="#4C9E75"/>
-      <stop offset="1" stop-color="#173F49"/>
+    <linearGradient id="favGlowA" x1="8" y1="64" x2="58" y2="88" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DDF488" />
+      <stop offset="0.42" stop-color="#A1D66D" />
+      <stop offset="1" stop-color="#4A9B75" />
+    </linearGradient>
+    <linearGradient id="favGlowB" x1="44" y1="16" x2="100" y2="98" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B6E57A" />
+      <stop offset="0.48" stop-color="#6DB57A" />
+      <stop offset="1" stop-color="#265F63" />
     </linearGradient>
   </defs>
-  <path d="M8 64H20C26 64 25 47 33 47C41 47 39 84 51 84C63 84 60 14 71 14C82 14 80 64 89 64C98 64 97 27 105 27C113 27 112 64 120 64" stroke="url(#mark-a)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity="0.75"/>
-  <path d="M20 64H35C48 64 45 30 58 30C71 30 70 97 84 97C98 97 98 30 110 30C122 30 119 64 120 64" stroke="url(#mark-b)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity="0.82"/>
-  <path d="M18 64H42C52 64 49 38 58 38C67 38 72 89 81 89C90 89 90 38 100 38C110 38 108 64 114 64" stroke="#1C5057" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#favBg)" />
+  <path
+    d="M16 64H30C38 64 38 48 46 48C58 48 56 88 68 88C84 88 80 20 94 20C108 20 104 82 114 82"
+    stroke="url(#favGlowA)"
+    stroke-width="14"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.86"
+  />
+  <path
+    d="M22 64H38C50 64 48 26 60 26C74 26 74 102 88 102C102 102 102 26 112 26"
+    stroke="url(#favGlowB)"
+    stroke-width="14"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    opacity="0.78"
+  />
+  <path
+    d="M18 64H40C48 64 48 52 54 52C62 52 62 34 68 34C76 34 76 94 84 94C92 94 92 34 100 34C106 34 106 64 110 64"
+    stroke="#214A50"
+    stroke-width="8"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>

@@ -60,6 +60,11 @@ anthropic_client = anthropic.Anthropic()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+ADMIN_EMAILS = {
+    email.strip().lower()
+    for email in os.getenv("ADMIN_EMAILS", "").split(",")
+    if email.strip()
+}
 
 
 class QuestionRequest(BaseModel):
@@ -105,6 +110,15 @@ class ProfileUpdateRequest(BaseModel):
     username: Optional[str] = None
     theme: Optional[str] = None
     settings: Optional[dict[str, Any]] = None
+
+
+class AdminRoleUpdateRequest(BaseModel):
+    isAdmin: bool
+
+
+class AdminDataResetRequest(BaseModel):
+    resetHistory: bool = True
+    resetProgress: bool = True
 
 
 class UploadQuestionRequest(BaseModel):
@@ -199,6 +213,15 @@ def get_authenticated_user(authorization: Optional[str]) -> dict[str, Any]:
         raise HTTPException(status_code=401, detail="Authentication failed")
 
     return response.json()
+
+
+def normalize_email(email: Optional[str]) -> str:
+    return (email or "").strip().lower()
+
+
+def is_bootstrap_admin_email(email: Optional[str]) -> bool:
+    normalized = normalize_email(email)
+    return bool(normalized and normalized in ADMIN_EMAILS)
 
 
 def update_job(job_id: str, **fields: Any) -> None:
@@ -659,31 +682,56 @@ def fetch_profile_by_user_id(user_id: str) -> Optional[dict[str, Any]]:
     return None
 
 
-def get_profile(user: dict[str, Any]) -> dict[str, Any]:
-    user_id = user["id"]
-    existing = fetch_profile_by_user_id(user_id)
-    if existing:
-        return existing
+def count_admin_profiles() -> int:
+    data = supabase_admin_request(
+        "GET",
+        "/rest/v1/profiles",
+        params={
+            "is_admin": "eq.true",
+            "select": "id",
+        },
+    )
+    return len(data or [])
 
-    profile = {
-        "id": user_id,
-        "email": user.get("email"),
-        "username": user.get("user_metadata", {}).get("username") or user.get("email", "friend").split("@")[0],
-        "theme": "light",
-        "settings": {
+
+def should_grant_admin(existing: Optional[dict[str, Any]], email: Optional[str]) -> bool:
+    if existing and existing.get("is_admin"):
+        return True
+    return is_bootstrap_admin_email(email)
+
+
+def build_default_profile(user: dict[str, Any], existing: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    email = user.get("email") or (existing or {}).get("email")
+    return {
+        "id": user["id"],
+        "email": email,
+        "username": (existing or {}).get("username")
+        or user.get("user_metadata", {}).get("username")
+        or (email or "friend@example.com").split("@")[0],
+        "theme": (existing or {}).get("theme", "light"),
+        "settings": (existing or {}).get("settings", {
             "type": "Cochlear",
             "difficulty": "Beginner",
             "frequency": "3-5",
             "cochlearAssessmentMode": "multiple-choice",
             "specificGroups": "",
             "specificSounds": "",
-        },
+        }),
+        "is_admin": should_grant_admin(existing, email),
     }
-    supabase_admin_request(
-        "POST",
-        "/rest/v1/profiles",
-        json_body=profile,
-    )
+
+
+def get_profile(user: dict[str, Any]) -> dict[str, Any]:
+    user_id = user["id"]
+    existing = fetch_profile_by_user_id(user_id)
+    profile = build_default_profile(user, existing)
+    if existing != profile:
+        supabase_admin_request(
+            "POST",
+            "/rest/v1/profiles",
+            params={"on_conflict": "id"},
+            json_body=profile,
+        )
     return profile
 
 
@@ -694,6 +742,7 @@ def update_profile(user_id: str, payload: ProfileUpdateRequest) -> dict[str, Any
         "username": "friend",
         "theme": "light",
         "settings": {},
+        "is_admin": False,
     }
     updated = {
         "id": user_id,
@@ -701,6 +750,7 @@ def update_profile(user_id: str, payload: ProfileUpdateRequest) -> dict[str, Any
         "username": payload.username if payload.username is not None else existing.get("username"),
         "theme": payload.theme if payload.theme is not None else existing.get("theme", "light"),
         "settings": payload.settings if payload.settings is not None else existing.get("settings", {}),
+        "is_admin": should_grant_admin(existing, existing.get("email")),
     }
     supabase_admin_request(
         "POST",
@@ -709,6 +759,142 @@ def update_profile(user_id: str, payload: ProfileUpdateRequest) -> dict[str, Any
         json_body=updated,
     )
     return updated
+
+
+def require_admin_user(user: dict[str, Any]) -> dict[str, Any]:
+    profile = get_profile(user)
+    if not profile.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Administrator access required")
+    return profile
+
+
+def list_profiles() -> list[dict[str, Any]]:
+    return supabase_admin_request(
+        "GET",
+        "/rest/v1/profiles",
+        params={
+            "select": "*",
+            "order": "created_at.desc",
+        },
+    ) or []
+
+
+def list_all_user_progress() -> list[dict[str, Any]]:
+    return supabase_admin_request(
+        "GET",
+        "/rest/v1/user_progress",
+        params={
+            "select": "*",
+        },
+    ) or []
+
+
+def get_history_counts_by_user() -> dict[str, int]:
+    rows = supabase_admin_request(
+        "GET",
+        "/rest/v1/video_score_history",
+        params={"select": "user_id"},
+    ) or []
+    counts: dict[str, int] = {}
+    for row in rows:
+        user_id = row.get("user_id")
+        if user_id:
+            counts[user_id] = counts.get(user_id, 0) + 1
+    return counts
+
+
+def get_question_counts_by_user() -> dict[str, int]:
+    rows = supabase_admin_request(
+        "GET",
+        "/rest/v1/question_results",
+        params={"select": "user_id"},
+    ) or []
+    counts: dict[str, int] = {}
+    for row in rows:
+        user_id = row.get("user_id")
+        if user_id:
+            counts[user_id] = counts.get(user_id, 0) + 1
+    return counts
+
+
+def build_admin_user_list() -> list[dict[str, Any]]:
+    profiles = list_profiles()
+    progress_by_user = {
+        row.get("user_id"): row for row in list_all_user_progress() if row.get("user_id")
+    }
+    history_counts = get_history_counts_by_user()
+    question_counts = get_question_counts_by_user()
+
+    users: list[dict[str, Any]] = []
+    for profile in profiles:
+        user_id = profile["id"]
+        progress = progress_by_user.get(user_id, {})
+        total_questions = int(progress.get("total_questions", 0) or 0)
+        correct_answers = int(progress.get("correct_answers", 0) or 0)
+        accuracy = round(correct_answers / total_questions, 3) if total_questions else None
+        users.append({
+            "id": user_id,
+            "email": profile.get("email"),
+            "username": profile.get("username"),
+            "theme": profile.get("theme", "light"),
+            "isAdmin": bool(profile.get("is_admin")),
+            "createdAt": profile.get("created_at"),
+            "updatedAt": profile.get("updated_at"),
+            "settings": profile.get("settings") or {},
+            "progress": {
+                "totalQuestions": total_questions,
+                "correctAnswers": correct_answers,
+                "accuracy": accuracy,
+                "proficiencyLevel": progress.get("proficiency_level", "Beginner"),
+                "lastUpdated": progress.get("last_updated"),
+            },
+            "historyCount": history_counts.get(user_id, 0),
+            "questionResultCount": question_counts.get(user_id, 0),
+        })
+
+    return users
+
+
+def build_admin_summary() -> dict[str, Any]:
+    users = build_admin_user_list()
+    total_sessions = sum(user["historyCount"] for user in users)
+    total_question_results = sum(user["questionResultCount"] for user in users)
+    return {
+        "totalUsers": len(users),
+        "adminUsers": sum(1 for user in users if user["isAdmin"]),
+        "totalSessions": total_sessions,
+        "totalQuestionResults": total_question_results,
+    }
+
+
+def set_admin_role(target_user_id: str, is_admin: bool, acting_user_id: str) -> dict[str, Any]:
+    existing = fetch_profile_by_user_id(target_user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="User profile not found")
+
+    if existing.get("is_admin") and not is_admin and target_user_id == acting_user_id and count_admin_profiles() <= 1:
+        raise HTTPException(status_code=400, detail="You cannot remove the last administrator")
+
+    existing["is_admin"] = is_admin
+    supabase_admin_request(
+        "POST",
+        "/rest/v1/profiles",
+        params={"on_conflict": "id"},
+        json_body=existing,
+    )
+    return existing
+
+
+def delete_user_account(target_user_id: str, acting_user_id: str) -> dict[str, str]:
+    existing = fetch_profile_by_user_id(target_user_id)
+    if existing and existing.get("is_admin") and target_user_id == acting_user_id and count_admin_profiles() <= 1:
+        raise HTTPException(status_code=400, detail="You cannot delete the last administrator account")
+
+    supabase_admin_request(
+        "DELETE",
+        f"/auth/v1/admin/users/{target_user_id}",
+    )
+    return {"status": "success"}
 
 
 def download_audio(url: str) -> str:
@@ -1413,3 +1599,49 @@ def clear_history_endpoint(authorization: Optional[str] = Header(default=None)):
     user = get_authenticated_user(authorization)
     clear_score_history(user["id"])
     return {"status": "success"}
+
+
+@app.get("/admin/summary")
+def get_admin_summary_endpoint(authorization: Optional[str] = Header(default=None)):
+    user = get_authenticated_user(authorization)
+    require_admin_user(user)
+    return build_admin_summary()
+
+
+@app.get("/admin/users")
+def get_admin_users_endpoint(authorization: Optional[str] = Header(default=None)):
+    user = get_authenticated_user(authorization)
+    require_admin_user(user)
+    return build_admin_user_list()
+
+
+@app.put("/admin/users/{user_id}/role")
+def update_admin_role_endpoint(
+    user_id: str,
+    payload: AdminRoleUpdateRequest,
+    authorization: Optional[str] = Header(default=None),
+):
+    user = get_authenticated_user(authorization)
+    require_admin_user(user)
+    return set_admin_role(user_id, payload.isAdmin, user["id"])
+
+
+@app.delete("/admin/users/{user_id}/data")
+def clear_admin_user_data_endpoint(
+    user_id: str,
+    authorization: Optional[str] = Header(default=None),
+):
+    user = get_authenticated_user(authorization)
+    require_admin_user(user)
+    clear_score_history(user_id)
+    return {"status": "success"}
+
+
+@app.delete("/admin/users/{user_id}")
+def delete_admin_user_endpoint(
+    user_id: str,
+    authorization: Optional[str] = Header(default=None),
+):
+    user = get_authenticated_user(authorization)
+    require_admin_user(user)
+    return delete_user_account(user_id, user["id"])

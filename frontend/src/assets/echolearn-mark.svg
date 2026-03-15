@@ -1,17 +1,42 @@
-<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="160" height="96" viewBox="0 0 160 96" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="markFillA" x1="14" y1="18" x2="70" y2="96" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#D8F27A"/>
-      <stop offset="0.48" stop-color="#90D66D"/>
-      <stop offset="1" stop-color="#2E7C68"/>
+    <linearGradient id="markGlowA" x1="8" y1="46" x2="74" y2="72" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DDF488" />
+      <stop offset="0.42" stop-color="#A1D66D" />
+      <stop offset="1" stop-color="#4A9B75" />
     </linearGradient>
-    <linearGradient id="markFillB" x1="54" y1="14" x2="108" y2="106" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#B3EA7A"/>
-      <stop offset="0.48" stop-color="#4D9E75"/>
-      <stop offset="1" stop-color="#163F49"/>
+    <linearGradient id="markGlowB" x1="52" y1="10" x2="126" y2="82" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B6E57A" />
+      <stop offset="0.48" stop-color="#6DB57A" />
+      <stop offset="1" stop-color="#265F63" />
+    </linearGradient>
+    <linearGradient id="markGlowC" x1="78" y1="12" x2="142" y2="80" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#CAE985" />
+      <stop offset="0.45" stop-color="#90CF72" />
+      <stop offset="1" stop-color="#214A50" />
     </linearGradient>
   </defs>
-  <path d="M8 64H18C26 64 26 49 33 49C42 49 40 83 52 83C66 83 62 17 72 17C82 17 81 61 89 61C97 61 95 106 107 106C119 106 117 17 121 17" stroke="url(#markFillA)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity="0.72"/>
-  <path d="M24 64H38C50 64 48 30 58 30C70 30 72 97 84 97C97 97 98 33 109 33C118 33 117 64 120 64" stroke="url(#markFillB)" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" opacity="0.84"/>
-  <path d="M18 64H44C53 64 50 39 58 39C66 39 72 89 81 89C90 89 91 39 101 39C108 39 108 64 112 64" stroke="#1C5057" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path
+    d="M4 48H22C28 48 28 36 34 36C42 36 40 66 52 66C66 66 64 8 76 8C88 8 86 66 98 66C110 66 108 36 116 36C122 36 122 48 128 48H156"
+    fill="url(#markGlowA)"
+    fill-opacity="0.9"
+  />
+  <path
+    d="M2 48H18C30 48 28 22 40 22C52 22 52 82 66 82C80 82 78 2 92 2C106 2 104 82 118 82C132 82 130 22 142 22C150 22 150 48 156 48"
+    fill="url(#markGlowB)"
+    fill-opacity="0.72"
+  />
+  <path
+    d="M2 48H22C30 48 30 42 34 42C42 42 40 16 48 16C56 16 56 86 66 86C76 86 76 16 84 16C92 16 92 86 102 86C112 86 112 16 120 16C128 16 126 42 134 42C138 42 138 48 146 48H156"
+    fill="url(#markGlowC)"
+    fill-opacity="0.5"
+  />
+  <path
+    d="M2 48H24C30 48 30 44 36 44C44 44 44 28 50 28C58 28 58 68 68 68C76 68 76 12 86 12C96 12 96 68 106 68C114 68 114 28 122 28C128 28 128 44 136 44C142 44 142 48 150 48H156"
+    stroke="#214A50"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
 </svg>
