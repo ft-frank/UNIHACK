@@ -59,6 +59,8 @@ class QuestionRequest(BaseModel):
     cochlearAssessmentMode: str = "multiple-choice"
     specificGroups: str = ""
     specificSounds: str = ""
+    languageFocus: str = "Both"
+    nativeLanguage: str = ""
 
 class UserProgress(BaseModel):
     userId: str
@@ -105,6 +107,8 @@ class UploadQuestionRequest(BaseModel):
     cochlearAssessmentMode: str = "multiple-choice"
     specificGroups: str = ""
     specificSounds: str = ""
+    languageFocus: str = "Both"
+    nativeLanguage: str = ""
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -112,6 +116,14 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 jobs_lock = Lock()
 jobs: dict[str, dict[str, Any]] = {}
+
+
+def ensure_supabase_config() -> None:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
+        )
 
 
 def _supabase_service_headers(extra: dict | None = None) -> dict:
@@ -132,14 +144,13 @@ def supabase_db(
     json_data: Any = None,
     prefer: str = "return=representation",
 ) -> Any:
-    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-        raise RuntimeError("Supabase is not configured.")
+    ensure_supabase_config()
     url = f"{SUPABASE_URL}/rest/v1/{table}"
     headers = _supabase_service_headers({"Prefer": prefer})
-    resp = requests.request(method, url, headers=headers, params=params, json=json_data)
+    resp = requests.request(method, url, headers=headers, params=params, json=json_data, timeout=20)
     if not resp.ok:
         logger.error("Supabase DB %s %s → %s: %s", method, table, resp.status_code, resp.text)
-        resp.raise_for_status()
+        raise HTTPException(status_code=500, detail=resp.text)
     return resp.json() if resp.text and resp.text.strip() not in ("", "null") else []
 
 
@@ -262,7 +273,7 @@ def list_score_history(user_id: str) -> List[VideoScoreRecord]:
     try:
         rows = supabase_db(
             "GET",
-            "score_history",
+            "video_score_history",
             params={"user_id": f"eq.{user_id}", "order": "completed_at.desc"},
         )
         return [
@@ -286,7 +297,7 @@ def save_score_record(user_id: str, record: VideoScoreRecord) -> List[VideoScore
     try:
         supabase_db(
             "POST",
-            "score_history",
+            "video_score_history",
             json_data={
                 "id": record.id,
                 "user_id": user_id,
@@ -308,7 +319,7 @@ def clear_score_history(user_id: str):
     try:
         supabase_db(
             "DELETE",
-            "score_history",
+            "video_score_history",
             params={"user_id": f"eq.{user_id}"},
             prefer="return=minimal",
         )
@@ -327,7 +338,7 @@ def get_profile(user: dict[str, Any]) -> dict[str, Any]:
         "specificSounds": "",
     }
     try:
-        rows = supabase_db("GET", "profiles", params={"user_id": f"eq.{user_id}", "limit": "1"})
+        rows = supabase_db("GET", "profiles", params={"id": f"eq.{user_id}", "limit": "1"})
         if rows:
             r = rows[0]
             return {
@@ -350,10 +361,10 @@ def get_profile(user: dict[str, Any]) -> dict[str, Any]:
 
 def update_profile(user_id: str, payload: ProfileUpdateRequest) -> dict[str, Any]:
     try:
-        existing = supabase_db("GET", "profiles", params={"user_id": f"eq.{user_id}", "limit": "1"})
+        existing = supabase_db("GET", "profiles", params={"id": f"eq.{user_id}", "limit": "1"})
         current = existing[0] if existing else {}
         updated = {
-            "user_id": user_id,
+            "id": user_id,
             "username": payload.username if payload.username is not None else current.get("username", "friend"),
             "theme": payload.theme if payload.theme is not None else current.get("theme", "light"),
             "settings": payload.settings if payload.settings is not None else current.get("settings") or {},
@@ -459,10 +470,7 @@ def build_word_transcript(transcript) -> str:
     for i, w in enumerate(words):
         start_sec = w.start // 1000
         end_sec = w.end // 1000
-        if i + 1 < len(words):
-            pause_at_sec = words[i + 1].start // 1000
-        else:
-            pause_at_sec = end_sec + 1
+        pause_at_sec = end_sec + 1
         lines.append(f"[start:{start_sec}s end:{end_sec}s pause_at:{pause_at_sec}s] {w.text}")
     return "\n".join(lines)
 
@@ -514,6 +522,8 @@ def generate_questions(
     specific_groups: str = "",
     specific_sounds: str = "",
     user_progress: Optional[UserProgress] = None,
+    language_focus: str = "Both",
+    native_language: str = "",
 ) -> list:
     duration_seconds = estimate_transcript_duration_seconds(transcript)
     num_questions = calculate_question_count(frequency)
@@ -663,6 +673,75 @@ Return ONLY a JSON array with this exact structure, no other text:
 }}
 ]"""
 
+    elif quiz_type == "Language":
+        native_language_hint = ""
+        if native_language:
+            native_language_hint = f"\n- The learner's native language is {native_language}. Be aware of common grammar errors speakers of that language make in English (e.g. article usage, preposition choice, verb tense)."
+
+        focus_rules = ""
+        if language_focus == "Vocabulary":
+            focus_rules = "Every question must be kind \"multiple-choice\" (vocabulary)."
+        elif language_focus == "Grammar":
+            focus_rules = "Every question must be kind \"fill-in-the-blanks\" (grammar)."
+        else:
+            focus_rules = "Return a balanced mix: roughly half vocabulary (multiple-choice) and half grammar (fill-in-the-blanks)."
+
+        prompt = f"""You are generating English language learning quiz questions for a non-native English speaker watching an English video.
+
+Given this transcript (with timestamps in seconds):
+
+{timed_transcript}
+
+Use these quiz settings exactly:
+{settings_block}
+{native_language_hint}
+
+Generate exactly {num_questions} questions spread throughout the video. {focus_rules}
+
+For "multiple-choice" VOCABULARY questions:
+- Pick a useful English word or phrase from the transcript that a language learner should know.
+- For Beginner: common everyday words; Intermediate: academic or idiomatic expressions; Advanced: nuanced, domain-specific, or idiomatic vocabulary.
+- Write the question as: "What does '[word/phrase]' mean as used in the video?"
+- Provide 4 answer choices that are clear one-sentence definitions or synonyms.
+- Only one choice should be correct.
+- Use a timestamp (in seconds) shortly after the word was spoken.
+- Set "word" to the target vocabulary word or phrase.
+- Set "languageCategory" to "vocabulary".
+
+For "fill-in-the-blanks" GRAMMAR questions:
+- Take a sentence spoken in the video and remove {blank_count} grammatical word(s): articles (a/an/the), prepositions (in/on/at/by/with), auxiliary verbs (is/are/was/were/has/have/had/will/would), conjunctions, or verb inflections.
+- Use markers [BLANK_1], [BLANK_2], etc. inside sentenceWithBlanks.
+- Return the original full sentence in promptSentence.
+- Return the correct missing word(s) in the blanks array.
+- Use a timestamp after the sentence has been spoken.
+- Set "word" to the main grammatical element being tested.
+- Set "languageCategory" to "grammar".
+
+Each question must be appropriate for a {difficulty} level English learner.
+
+Return ONLY a JSON array with this exact structure, no other text:
+[
+{{
+    "kind": "multiple-choice",
+    "timestamp": <integer seconds after the word is spoken>,
+    "question": "What does '[word/phrase]' mean as used in the video?",
+    "choices": ["<correct definition>", "<plausible wrong definition>", "<plausible wrong definition>", "<plausible wrong definition>"],
+    "answerIndex": <index of correct choice, 0-3>,
+    "word": "<target vocabulary word or phrase>",
+    "languageCategory": "vocabulary"
+}},
+{{
+    "kind": "fill-in-the-blanks",
+    "timestamp": <integer seconds after the sentence is spoken>,
+    "question": "Fill in the missing word(s) from the sentence.",
+    "sentenceWithBlanks": "<sentence with [BLANK_1], [BLANK_2], ... markers>",
+    "promptSentence": "<the full original sentence>",
+    "blanks": ["<correct word 1>", "<correct word 2>"],
+    "word": "<main grammatical element being tested>",
+    "languageCategory": "grammar"
+}}
+]"""
+
     else:  # Lecture (default)
         prompt = f"""You are generating comprehension quiz questions for an interactive video lecture player.
 
@@ -693,7 +772,7 @@ Return ONLY a JSON array with this exact structure, no other text:
 ]"""
 
     message = anthropic_client.messages.create(
-        model="claude-opus-4-6",
+        model="claude-sonnet-4-6",
         max_tokens=2048,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -773,7 +852,9 @@ def run_generation_job(job_id: str, req: QuestionRequest, user_id: str) -> None:
             req.cochlearAssessmentMode,
             req.specificGroups,
             req.specificSounds,
-            user_progress
+            user_progress,
+            req.languageFocus,
+            req.nativeLanguage,
         )
 
         update_job(
@@ -831,6 +912,8 @@ def run_uploaded_generation_job(
             req.specificGroups,
             req.specificSounds,
             user_progress,
+            req.languageFocus,
+            req.nativeLanguage,
         )
 
         update_job(
@@ -881,6 +964,8 @@ def get_questions(req: QuestionRequest, authorization: Optional[str] = Header(de
             req.specificGroups,
             req.specificSounds,
             user_progress,
+            req.languageFocus,
+            req.nativeLanguage,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Question generation failed: {e}")
@@ -915,6 +1000,8 @@ async def create_uploaded_questions_job(
     cochlearAssessmentMode: str = Form("multiple-choice"),
     specificGroups: str = Form(""),
     specificSounds: str = Form(""),
+    languageFocus: str = Form("Both"),
+    nativeLanguage: str = Form(""),
     authorization: Optional[str] = Header(default=None),
 ):
     user = get_authenticated_user(authorization)
@@ -939,6 +1026,8 @@ async def create_uploaded_questions_job(
         cochlearAssessmentMode=cochlearAssessmentMode,
         specificGroups=specificGroups,
         specificSounds=specificSounds,
+        languageFocus=languageFocus,
+        nativeLanguage=nativeLanguage,
     )
 
     with jobs_lock:
@@ -1020,3 +1109,9 @@ def clear_history_endpoint(authorization: Optional[str] = Header(default=None)):
     user = get_authenticated_user(authorization)
     clear_score_history(user["id"])
     return {"status": "success"}
+
+
+@app.get("/progress")
+def get_progress_endpoint(authorization: Optional[str] = Header(default=None)):
+    user = get_authenticated_user(authorization)
+    return get_user_progress(user["id"])

@@ -2,12 +2,14 @@
 import { useState, useEffect } from "react";
 
 export type UserSettings = {
-  type: "Lecture" | "Cochlear";
+  type: "Lecture" | "Cochlear" | "Language";
   difficulty: string;
   frequency: string;
   cochlearAssessmentMode: "multiple-choice" | "fill-in-the-blanks" | "both";
   specificGroups: string;
   specificSounds: string;
+  languageFocus: "Vocabulary" | "Grammar" | "Both";
+  nativeLanguage: string;
 };
 
 type SettingsProps = {
@@ -43,6 +45,7 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
   };
 
   const isCochlear = localSettings.type === "Cochlear";
+  const isLanguage = localSettings.type === "Language";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4">
@@ -64,25 +67,27 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
           {/* Type */}
           <div className="flex flex-col gap-1.5">
             <label className="text-sm font-medium text-[#1C1B18]">Mode</label>
-            <div className="grid grid-cols-2 gap-2">
-              {(["Lecture", "Cochlear"] as const).map((t) => (
+            <div className="grid grid-cols-3 gap-2">
+              {(["Lecture", "Cochlear", "Language"] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
                   onClick={() => handleChange("type", t)}
-                  className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
+                  className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
                     localSettings.type === t
                       ? "border-[#3A6EAE] bg-[#3A6EAE] text-white"
                       : "border-[#E2E0DB] bg-[#F4F6FA] text-[#1C1B18] hover:border-[#D4D2CC]"
                   }`}
                 >
-                  {t === "Lecture" ? "Lecture" : "Cochlear / Hearing"}
+                  {t === "Lecture" ? "Lecture" : t === "Cochlear" ? "Cochlear" : "Language"}
                 </button>
               ))}
             </div>
             <p className="text-xs text-[#7A7570]">
               {isCochlear
                 ? "Targets phonetically difficult words for hearing rehabilitation."
+                : isLanguage
+                ? "Builds English vocabulary and grammar using real video content."
                 : "Asks comprehension questions about topics covered in the video."}
             </p>
           </div>
@@ -114,6 +119,54 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
               <option value="10-15">10 – 15</option>
             </select>
           </div>
+
+          {/* Language-only */}
+          {isLanguage && (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-[#1C1B18]">Focus</label>
+                <select
+                  value={localSettings.languageFocus}
+                  onChange={(e) => handleChange("languageFocus", e.target.value)}
+                  className="w-full rounded-lg border border-[#E2E0DB] bg-[#F4F6FA] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#3A6EAE] focus:outline-none focus:ring-2 focus:ring-[#3A6EAE]/20"
+                >
+                  <option value="Both">Both (Vocabulary & Grammar)</option>
+                  <option value="Vocabulary">Vocabulary</option>
+                  <option value="Grammar">Grammar</option>
+                </select>
+                <p className="text-xs text-[#7A7570]">
+                  Vocabulary tests word meanings in context. Grammar drills articles, prepositions, and verb forms.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-sm font-medium text-[#1C1B18]">
+                  Native Language{" "}
+                  <span className="font-normal text-[#B8B5AF]">(Optional)</span>
+                </label>
+                <select
+                  value={localSettings.nativeLanguage}
+                  onChange={(e) => handleChange("nativeLanguage", e.target.value)}
+                  className="w-full rounded-lg border border-[#E2E0DB] bg-[#F4F6FA] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#3A6EAE] focus:outline-none focus:ring-2 focus:ring-[#3A6EAE]/20"
+                >
+                  <option value="">Not specified</option>
+                  <option value="Arabic">Arabic</option>
+                  <option value="French">French</option>
+                  <option value="Hindi">Hindi</option>
+                  <option value="Japanese">Japanese</option>
+                  <option value="Korean">Korean</option>
+                  <option value="Mandarin">Mandarin</option>
+                  <option value="Portuguese">Portuguese</option>
+                  <option value="Russian">Russian</option>
+                  <option value="Spanish">Spanish</option>
+                  <option value="Vietnamese">Vietnamese</option>
+                </select>
+                <p className="text-xs text-[#7A7570]">
+                  Helps target grammar patterns that are tricky for speakers of your language.
+                </p>
+              </div>
+            </>
+          )}
 
           {/* Cochlear-only */}
           {isCochlear && (

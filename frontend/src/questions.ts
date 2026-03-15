@@ -69,6 +69,8 @@ export const createUploadQuestionsJob = async (
   formData.append("cochlearAssessmentMode", settings.cochlearAssessmentMode);
   formData.append("specificGroups", settings.specificGroups);
   formData.append("specificSounds", settings.specificSounds);
+  formData.append("languageFocus", settings.languageFocus);
+  formData.append("nativeLanguage", settings.nativeLanguage);
 
   return apiFetch<{ jobId: string; mediaId: string; title: string }>(
     "/questions/jobs/upload",

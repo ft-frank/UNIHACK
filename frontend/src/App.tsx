@@ -72,6 +72,8 @@ const defaultSettings: UserSettings = {
   cochlearAssessmentMode: "multiple-choice",
   specificGroups: "",
   specificSounds: "",
+  languageFocus: "Both",
+  nativeLanguage: "",
 };
 
 const mergeSettings = (incoming?: Partial<UserSettings> | null): UserSettings => ({
@@ -119,6 +121,7 @@ export default function App() {
   const [generationProgress, setGenerationProgress] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [history, setHistory] = useState<VideoScoreRecord[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
   const [username, setUsername] = useState("friend");
@@ -182,9 +185,8 @@ export default function App() {
     intervalRef.current = window.setInterval(() => {
       const t = getCurrentTime();
       if (t === null || hintReplayActiveRef.current) return;
-      const sec = Math.floor(t);
       const q = questionsRef.current.find(
-        (e) => sec >= e.timestamp && !processedRef.current.includes(e.timestamp)
+        (e) => t >= e.timestamp && t < e.timestamp + 1 && !processedRef.current.includes(e.timestamp)
       );
       if (q) {
         processedRef.current.push(q.timestamp);
@@ -601,6 +603,18 @@ export default function App() {
     clearStoredHistory().then(() => setHistory([])).catch(console.error);
   };
 
+  const refreshHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const records = await getStoredHistory();
+      setHistory(records);
+    } catch (e) {
+      console.error("Failed to refresh history:", e);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
   const currentAccuracy = answeredCount ? Math.round((score / answeredCount) * 100) : 0;
   const plantStage = Math.min(10, Math.floor(currentAccuracy / 10));
 
@@ -755,7 +769,7 @@ export default function App() {
 
         <nav className="mt-8 flex flex-col gap-0.5">
           <NavButton label="Dashboard" active={activePage === "dashboard"} onClick={() => { setActivePage("dashboard"); setIsNavOpen(false); }} />
-          <NavButton label="Statistics" active={activePage === "statistics"} onClick={() => { setActivePage("statistics"); setIsNavOpen(false); }} />
+          <NavButton label="Statistics" active={activePage === "statistics"} onClick={() => { setActivePage("statistics"); setIsNavOpen(false); refreshHistory(); }} />
           <NavButton label="Past Attempts" active={activePage === "past-attempts"} onClick={() => { setActivePage("past-attempts"); setIsNavOpen(false); }} />
         </nav>
 
@@ -1035,7 +1049,7 @@ export default function App() {
         </>
       ) : activePage === "statistics" ? (
         <main className="mx-auto max-w-[1600px] px-6 py-8">
-          <StatisticsPage history={history} onClearHistory={handleClearHistory} />
+          <StatisticsPage history={history} onClearHistory={handleClearHistory} onRefresh={refreshHistory} isLoading={historyLoading} />
         </main>
       ) : (
         <main className="mx-auto max-w-[1600px] px-6 py-8">
