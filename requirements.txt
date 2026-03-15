@@ -1,11 +1,23 @@
-anthropic==0.84.0
-assemblyai==0.56.0
-fastapi==0.135.1
-httpx==0.28.1
-pydantic==2.12.5
-python-dotenv==1.2.2
-requests==2.32.5
-uvicorn==0.41.0
-watchfiles==1.1.1
-websockets==16.0
-yt-dlp==2026.3.3
+# Audio analysis
+librosa==0.10.2
+numpy>=1.24
+scipy>=1.11
+soundfile>=0.12
+
+# YouTube downloading
+yt-dlp>=2024.3.10
+
+# HTTP
+httpx>=0.27
+
+# Elasticsearch
+elasticsearch==8.13.0
+
+# REST API
+fastapi>=0.110.0
+uvicorn>=0.29.0
+pydantic>=2.6
+
+# Zero-shot genre classification
+transformers>=4.40.0
+torch>=2.2.0
