@@ -26,8 +26,7 @@ const tryHistoryRequest = async <T>(
 ): Promise<T> => {
   const hasHistoryPath = await backendHasPath("/history");
   if (!hasHistoryPath) {
-    if (method === "GET") return [] as T;
-    return { status: "unavailable" } as T;
+    return [] as T;
   }
 
   try {

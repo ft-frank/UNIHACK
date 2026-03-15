@@ -41,15 +41,15 @@ export default function AuthPanel({ onSignIn, onSignUp, initialMode = "signin", 
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F6F2] font-sans">
+    <div className="min-h-screen bg-[#F4F6FA] font-sans">
       <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-4 py-12">
         <div className="grid w-full gap-8 lg:grid-cols-[1.1fr_0.9fr]">
 
           {/* Left: marketing */}
           <div className="flex flex-col justify-center">
             <span className="font-display text-2xl italic text-[#1C1B18]">echoLearn</span>
-            <h1 className="mt-6 text-4xl font-semibold leading-tight text-[#1C1B18]">
-              Your progress,<br />saved to your account.
+            <h1 className="mt-6 text-5xl font-black leading-tight text-[#1C1B18]">
+              Your progress,<br /><span className="font-display font-normal italic">saved to your account.</span>
             </h1>
             <p className="mt-4 text-[#7A7570]">
               Sign in to keep your streak, question history, stats, and settings synced.
@@ -61,7 +61,7 @@ export default function AuthPanel({ onSignIn, onSignUp, initialMode = "signin", 
                 { label: "Saved settings", desc: "Difficulty and mode remembered." },
               ].map((item) => (
                 <div key={item.label} className="rounded-xl border border-[#E2E0DB] bg-white p-4">
-                  <p className="font-medium text-[#1C1B18]">{item.label}</p>
+                  <p className="font-bold text-[#1C1B18]">{item.label}</p>
                   <p className="mt-1 text-xs text-[#7A7570]">{item.desc}</p>
                 </div>
               ))}
@@ -89,7 +89,7 @@ export default function AuthPanel({ onSignIn, onSignUp, initialMode = "signin", 
                   onClick={() => setMode(tab)}
                   className={`flex-1 rounded-md py-2 text-sm font-medium transition-all ${
                     mode === tab
-                      ? "bg-[#D4500A] text-white shadow-sm"
+                      ? "bg-[#3A6EAE] text-white shadow-sm"
                       : "text-[#7A7570] hover:text-[#1C1B18]"
                   }`}
                 >
@@ -106,7 +106,7 @@ export default function AuthPanel({ onSignIn, onSignUp, initialMode = "signin", 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="rounded-lg border border-[#E2E0DB] px-4 py-2.5 text-sm text-[#1C1B18] placeholder-[#B8B5AF] focus:border-[#D4500A] focus:outline-none focus:ring-2 focus:ring-[#D4500A]/20"
+                  className="rounded-lg border border-[#E2E0DB] px-4 py-2.5 text-sm text-[#1C1B18] placeholder-[#B8B5AF] focus:border-[#3A6EAE] focus:outline-none focus:ring-2 focus:ring-[#3A6EAE]/20"
                 />
               </label>
 
@@ -118,7 +118,7 @@ export default function AuthPanel({ onSignIn, onSignUp, initialMode = "signin", 
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     required
-                    className="rounded-lg border border-[#E2E0DB] px-4 py-2.5 text-sm text-[#1C1B18] placeholder-[#B8B5AF] focus:border-[#D4500A] focus:outline-none focus:ring-2 focus:ring-[#D4500A]/20"
+                    className="rounded-lg border border-[#E2E0DB] px-4 py-2.5 text-sm text-[#1C1B18] placeholder-[#B8B5AF] focus:border-[#3A6EAE] focus:outline-none focus:ring-2 focus:ring-[#3A6EAE]/20"
                   />
                 </label>
               )}
@@ -131,7 +131,7 @@ export default function AuthPanel({ onSignIn, onSignUp, initialMode = "signin", 
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={6}
-                  className="rounded-lg border border-[#E2E0DB] px-4 py-2.5 text-sm text-[#1C1B18] placeholder-[#B8B5AF] focus:border-[#D4500A] focus:outline-none focus:ring-2 focus:ring-[#D4500A]/20"
+                  className="rounded-lg border border-[#E2E0DB] px-4 py-2.5 text-sm text-[#1C1B18] placeholder-[#B8B5AF] focus:border-[#3A6EAE] focus:outline-none focus:ring-2 focus:ring-[#3A6EAE]/20"
                 />
               </label>
 
@@ -149,7 +149,7 @@ export default function AuthPanel({ onSignIn, onSignUp, initialMode = "signin", 
               <button
                 type="submit"
                 disabled={submitting}
-                className="mt-2 rounded-lg bg-[#D4500A] py-3 text-sm font-semibold text-white transition-colors hover:bg-[#B83D07] disabled:cursor-not-allowed disabled:opacity-50"
+                className="mt-2 rounded-lg bg-[#3A6EAE] py-3 text-sm font-bold text-white transition-colors hover:bg-[#2C5A93] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {submitting
                   ? "Working…"

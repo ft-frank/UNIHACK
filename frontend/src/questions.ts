@@ -76,8 +76,13 @@ export const createUploadQuestionsJob = async (
   );
 };
 
-export const getQuestionsJob = async (jobId: string): Promise<QuestionsJob> =>
-  apiFetch<QuestionsJob>(`/questions/jobs/${jobId}`);
+export const getQuestionsJob = async (jobId: string): Promise<QuestionsJob> => {
+  const job = await apiFetch<QuestionsJob>(`/questions/jobs/${jobId}`);
+  if (job.questions) {
+    console.log("Questions fetched:", job.questions);
+  }
+  return job;
+};
 
 export const submitQuestionResult = async (
   videoId: string,

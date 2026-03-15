@@ -38,7 +38,7 @@ export default function PastAttemptsPage({ history }: PastAttemptsPageProps) {
 
   if (history.length === 0) {
     return (
-      <div className="flex aspect-video items-center justify-center rounded-2xl border-2 border-dashed border-[#D4D2CC] bg-[#F7F6F2] p-8 text-center">
+      <div className="flex aspect-video items-center justify-center rounded-2xl border-2 border-dashed border-[#D4D2CC] bg-[#F4F6FA] p-8 text-center">
         <div>
           <p className="font-medium text-[#1C1B18]">No past attempts yet</p>
           <p className="mt-1 text-sm text-[#7A7570]">
@@ -52,7 +52,7 @@ export default function PastAttemptsPage({ history }: PastAttemptsPageProps) {
   return (
     <div className="space-y-6">
       <div className="mb-6">
-        <h2 className="font-semibold text-[#1C1B18]">Past Attempts</h2>
+        <h2 className="text-xl font-bold text-[#1C1B18]">Past Attempts</h2>
         <p className="mt-1 text-sm text-[#7A7570]">
           Review your previous videos and question-level performance.
         </p>
@@ -72,7 +72,7 @@ export default function PastAttemptsPage({ history }: PastAttemptsPageProps) {
             >
               <button
                 onClick={() => handleToggle(record.videoId)}
-                className="flex w-full items-center justify-between p-5 text-left transition-colors hover:bg-[#F7F6F2]"
+                className="flex w-full items-center justify-between p-5 text-left transition-colors hover:bg-[#F4F6FA]"
               >
                 <div className="flex items-center gap-4">
                   <div className="relative h-16 w-28 shrink-0 overflow-hidden rounded-lg bg-[#1C1B18]">
@@ -96,7 +96,7 @@ export default function PastAttemptsPage({ history }: PastAttemptsPageProps) {
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0">
-                  <span className="rounded-md bg-[#F7F6F2] px-2.5 py-1 text-sm font-semibold text-[#1C1B18]">
+                  <span className="rounded-md bg-[#1C1B18] px-2.5 py-1 text-sm font-bold text-white">
                     {record.percentage}%
                   </span>
                   <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#E2E0DB] text-[#7A7570]">
@@ -117,7 +117,7 @@ export default function PastAttemptsPage({ history }: PastAttemptsPageProps) {
               </button>
 
               {isExpanded && (
-                <div className="border-t border-[#E2E0DB] bg-[#F7F6F2] p-5">
+                <div className="border-t border-[#E2E0DB] bg-[#F4F6FA] p-5">
                   {isLoading ? (
                     <p className="py-4 text-center text-sm text-[#B8B5AF]">
                       Loading question log…

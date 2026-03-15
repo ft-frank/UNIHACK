@@ -50,7 +50,7 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
 
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#E2E0DB] px-6 py-4">
-          <h2 className="font-semibold text-[#1C1B18]">Settings</h2>
+          <h2 className="font-bold text-[#1C1B18]">Settings</h2>
           <button onClick={onClose} className="p-1.5 text-[#B8B5AF] transition-colors hover:text-[#1C1B18]">
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-4 w-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
@@ -72,8 +72,8 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
                   onClick={() => handleChange("type", t)}
                   className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-all ${
                     localSettings.type === t
-                      ? "border-[#D4500A] bg-[#D4500A] text-white"
-                      : "border-[#E2E0DB] bg-[#F7F6F2] text-[#1C1B18] hover:border-[#D4D2CC]"
+                      ? "border-[#3A6EAE] bg-[#3A6EAE] text-white"
+                      : "border-[#E2E0DB] bg-[#F4F6FA] text-[#1C1B18] hover:border-[#D4D2CC]"
                   }`}
                 >
                   {t === "Lecture" ? "Lecture" : "Cochlear / Hearing"}
@@ -93,7 +93,7 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
             <select
               value={localSettings.difficulty}
               onChange={(e) => handleChange("difficulty", e.target.value)}
-              className="w-full rounded-lg border border-[#E2E0DB] bg-[#F7F6F2] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#D4500A] focus:outline-none focus:ring-2 focus:ring-[#D4500A]/20"
+              className="w-full rounded-lg border border-[#E2E0DB] bg-[#F4F6FA] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#3A6EAE] focus:outline-none focus:ring-2 focus:ring-[#3A6EAE]/20"
             >
               <option value="Beginner">Beginner</option>
               <option value="Intermediate">Intermediate</option>
@@ -107,7 +107,7 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
             <select
               value={localSettings.frequency}
               onChange={(e) => handleChange("frequency", e.target.value)}
-              className="w-full rounded-lg border border-[#E2E0DB] bg-[#F7F6F2] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#D4500A] focus:outline-none focus:ring-2 focus:ring-[#D4500A]/20"
+              className="w-full rounded-lg border border-[#E2E0DB] bg-[#F4F6FA] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#3A6EAE] focus:outline-none focus:ring-2 focus:ring-[#3A6EAE]/20"
             >
               <option value="3-5">3 – 5</option>
               <option value="5-10">5 – 10</option>
@@ -123,7 +123,7 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
                 <select
                   value={localSettings.cochlearAssessmentMode}
                   onChange={(e) => handleChange("cochlearAssessmentMode", e.target.value)}
-                  className="w-full rounded-lg border border-[#E2E0DB] bg-[#F7F6F2] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#D4500A] focus:outline-none focus:ring-2 focus:ring-[#D4500A]/20"
+                  className="w-full rounded-lg border border-[#E2E0DB] bg-[#F4F6FA] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#3A6EAE] focus:outline-none focus:ring-2 focus:ring-[#3A6EAE]/20"
                 >
                   <option value="multiple-choice">Multiple choice</option>
                   <option value="fill-in-the-blanks">Fill in the blanks</option>
@@ -142,7 +142,7 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
                 <select
                   value={localSettings.specificGroups}
                   onChange={(e) => handleChange("specificGroups", e.target.value)}
-                  className="w-full rounded-lg border border-[#E2E0DB] bg-[#F7F6F2] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#D4500A] focus:outline-none focus:ring-2 focus:ring-[#D4500A]/20"
+                  className="w-full rounded-lg border border-[#E2E0DB] bg-[#F4F6FA] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#3A6EAE] focus:outline-none focus:ring-2 focus:ring-[#3A6EAE]/20"
                 >
                   <option value="">None Selected</option>
                   <option value="Fricatives">Fricatives</option>
@@ -159,7 +159,7 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
                 <select
                   value={localSettings.specificSounds}
                   onChange={(e) => handleChange("specificSounds", e.target.value)}
-                  className="w-full rounded-lg border border-[#E2E0DB] bg-[#F7F6F2] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#D4500A] focus:outline-none focus:ring-2 focus:ring-[#D4500A]/20"
+                  className="w-full rounded-lg border border-[#E2E0DB] bg-[#F4F6FA] px-3 py-2.5 text-sm text-[#1C1B18] focus:border-[#3A6EAE] focus:outline-none focus:ring-2 focus:ring-[#3A6EAE]/20"
                 >
                   <option value="">None Selected</option>
                   <option value="/s/">/s/</option>
@@ -181,7 +181,7 @@ export default function Settings({ isOpen, onClose, currentSettings, onSave }: S
           </button>
           <button
             onClick={handleSave}
-            className="rounded-lg bg-[#D4500A] px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#B83D07]"
+            className="rounded-lg bg-[#3A6EAE] px-5 py-2 text-sm font-bold text-white transition-colors hover:bg-[#2C5A93]"
           >
             Save
           </button>

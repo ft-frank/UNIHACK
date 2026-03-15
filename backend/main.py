@@ -42,14 +42,13 @@ DOWNLOADS_PATH = BASE_DIR / "downloads"
 DOWNLOADS_PATH.mkdir(parents=True, exist_ok=True)
 DOWNLOADS_DIR = str(DOWNLOADS_PATH)
 
-from dotenv import load_dotenv
-load_dotenv()
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv(usecwd=True) or find_dotenv())
 aai.settings.api_key = os.getenv("ASSEMBLYAI_API_KEY")
 anthropic_client = anthropic.Anthropic()
-# AUTH DISABLED — uncomment when Supabase credentials are available
-# SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
-# SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
-# SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
 
 class QuestionRequest(BaseModel):
@@ -115,13 +114,48 @@ jobs_lock = Lock()
 jobs: dict[str, dict[str, Any]] = {}
 
 
-# AUTH DISABLED — restore when Supabase credentials are available
-# def ensure_supabase_config() -> None: ...
-# def supabase_admin_request(...) -> Any: ...
+def _supabase_service_headers(extra: dict | None = None) -> dict:
+    h = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/json",
+    }
+    if extra:
+        h.update(extra)
+    return h
+
+
+def supabase_db(
+    method: str,
+    table: str,
+    params: dict | None = None,
+    json_data: Any = None,
+    prefer: str = "return=representation",
+) -> Any:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise RuntimeError("Supabase is not configured.")
+    url = f"{SUPABASE_URL}/rest/v1/{table}"
+    headers = _supabase_service_headers({"Prefer": prefer})
+    resp = requests.request(method, url, headers=headers, params=params, json=json_data)
+    if not resp.ok:
+        logger.error("Supabase DB %s %s → %s: %s", method, table, resp.status_code, resp.text)
+        resp.raise_for_status()
+    return resp.json() if resp.text and resp.text.strip() not in ("", "null") else []
+
 
 def get_authenticated_user(authorization: Optional[str]) -> dict[str, Any]:
-    # AUTH DISABLED: always return a local guest user
-    return {"id": "local-user", "email": "guest@local", "user_metadata": {"username": "friend"}}
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise HTTPException(status_code=500, detail="Supabase auth is not configured")
+    token = authorization[len("Bearer "):]
+    resp = requests.get(
+        f"{SUPABASE_URL}/auth/v1/user",
+        headers={"apikey": SUPABASE_ANON_KEY, "Authorization": f"Bearer {token}"},
+    )
+    if not resp.ok:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return resp.json()
 
 
 def update_job(job_id: str, **fields: Any) -> None:
@@ -138,61 +172,197 @@ def get_job(job_id: str) -> dict[str, Any]:
         return dict(job)
 
 
-# AUTH DISABLED — data storage functions stubbed out; restore when Supabase is connected
-
 def get_user_progress(user_id: str) -> UserProgress:
+    try:
+        rows = supabase_db("GET", "user_progress", params={"user_id": f"eq.{user_id}", "limit": "1"})
+        if rows:
+            r = rows[0]
+            return UserProgress(
+                userId=r["user_id"],
+                totalQuestions=r.get("total_questions", 0),
+                correctAnswers=r.get("correct_answers", 0),
+                phoneticErrors=r.get("phonetic_errors") or {},
+                wordErrors=r.get("word_errors") or {},
+                proficiencyLevel=r.get("proficiency_level", "Beginner"),
+                lastUpdated=r.get("last_updated", ""),
+            )
+    except Exception:
+        logger.exception("Failed to fetch user progress for %s", user_id)
     return UserProgress(userId=user_id)
 
 
 def save_user_progress(progress: UserProgress):
-    pass  # no-op
+    try:
+        supabase_db(
+            "POST",
+            "user_progress",
+            json_data={
+                "user_id": progress.userId,
+                "total_questions": progress.totalQuestions,
+                "correct_answers": progress.correctAnswers,
+                "phonetic_errors": progress.phoneticErrors,
+                "word_errors": progress.wordErrors,
+                "proficiency_level": progress.proficiencyLevel,
+                "last_updated": progress.lastUpdated or datetime.utcnow().isoformat(),
+            },
+            prefer="resolution=merge-duplicates,return=minimal",
+        )
+    except Exception:
+        logger.exception("Failed to save user progress for %s", progress.userId)
 
 
 def save_question_result(user_id: str, result: QuestionResult):
-    pass  # no-op
+    try:
+        supabase_db(
+            "POST",
+            "question_results",
+            json_data={
+                "user_id": user_id,
+                "video_id": result.videoId,
+                "timestamp": result.timestamp,
+                "correct": result.correct,
+                "question_text": result.questionText,
+                "selected_answer": result.selectedAnswer,
+                "correct_answer": result.correctAnswer,
+                "word": result.word,
+                "phonetic_category": result.phoneticCategory,
+            },
+            prefer="return=minimal",
+        )
+    except Exception:
+        logger.exception("Failed to save question result for user %s", user_id)
 
 
 def get_question_results(user_id: str, video_id: str) -> List[QuestionResult]:
+    try:
+        rows = supabase_db(
+            "GET",
+            "question_results",
+            params={"user_id": f"eq.{user_id}", "video_id": f"eq.{video_id}"},
+        )
+        return [
+            QuestionResult(
+                videoId=r["video_id"],
+                timestamp=r["timestamp"],
+                correct=r["correct"],
+                questionText=r.get("question_text"),
+                selectedAnswer=r.get("selected_answer"),
+                correctAnswer=r.get("correct_answer"),
+                word=r.get("word"),
+                phoneticCategory=r.get("phonetic_category"),
+            )
+            for r in rows
+        ]
+    except Exception:
+        logger.exception("Failed to fetch question results for user %s", user_id)
     return []
 
 
 def list_score_history(user_id: str) -> List[VideoScoreRecord]:
+    try:
+        rows = supabase_db(
+            "GET",
+            "score_history",
+            params={"user_id": f"eq.{user_id}", "order": "completed_at.desc"},
+        )
+        return [
+            VideoScoreRecord(
+                id=r["id"],
+                videoId=r["video_id"],
+                videoName=r["video_name"],
+                completedAt=r["completed_at"],
+                score=r["score"],
+                totalQuestions=r["total_questions"],
+                percentage=r["percentage"],
+            )
+            for r in rows
+        ]
+    except Exception:
+        logger.exception("Failed to list score history for user %s", user_id)
     return []
 
 
 def save_score_record(user_id: str, record: VideoScoreRecord) -> List[VideoScoreRecord]:
-    return []
+    try:
+        supabase_db(
+            "POST",
+            "score_history",
+            json_data={
+                "id": record.id,
+                "user_id": user_id,
+                "video_id": record.videoId,
+                "video_name": record.videoName,
+                "completed_at": record.completedAt,
+                "score": record.score,
+                "total_questions": record.totalQuestions,
+                "percentage": record.percentage,
+            },
+            prefer="resolution=merge-duplicates,return=minimal",
+        )
+    except Exception:
+        logger.exception("Failed to save score record for user %s", user_id)
+    return list_score_history(user_id)
 
 
 def clear_score_history(user_id: str):
-    pass  # no-op
+    try:
+        supabase_db(
+            "DELETE",
+            "score_history",
+            params={"user_id": f"eq.{user_id}"},
+            prefer="return=minimal",
+        )
+    except Exception:
+        logger.exception("Failed to clear score history for user %s", user_id)
 
 
 def get_profile(user: dict[str, Any]) -> dict[str, Any]:
+    user_id = user["id"]
+    default_settings = {
+        "type": "Cochlear",
+        "difficulty": "Beginner",
+        "frequency": "3-5",
+        "cochlearAssessmentMode": "multiple-choice",
+        "specificGroups": "",
+        "specificSounds": "",
+    }
+    try:
+        rows = supabase_db("GET", "profiles", params={"user_id": f"eq.{user_id}", "limit": "1"})
+        if rows:
+            r = rows[0]
+            return {
+                "id": user_id,
+                "email": user.get("email", ""),
+                "username": r.get("username") or user.get("user_metadata", {}).get("username") or "friend",
+                "theme": r.get("theme", "light"),
+                "settings": r.get("settings") or default_settings,
+            }
+    except Exception:
+        logger.exception("Failed to fetch profile for user %s", user_id)
     return {
-        "id": user["id"],
+        "id": user_id,
         "email": user.get("email", ""),
         "username": user.get("user_metadata", {}).get("username") or "friend",
         "theme": "light",
-        "settings": {
-            "type": "Cochlear",
-            "difficulty": "Beginner",
-            "frequency": "3-5",
-            "cochlearAssessmentMode": "multiple-choice",
-            "specificGroups": "",
-            "specificSounds": "",
-        },
+        "settings": default_settings,
     }
 
 
 def update_profile(user_id: str, payload: ProfileUpdateRequest) -> dict[str, Any]:
-    return {
-        "id": user_id,
-        "email": None,
-        "username": payload.username or "friend",
-        "theme": payload.theme or "light",
-        "settings": payload.settings or {},
-    }
+    try:
+        existing = supabase_db("GET", "profiles", params={"user_id": f"eq.{user_id}", "limit": "1"})
+        current = existing[0] if existing else {}
+        updated = {
+            "user_id": user_id,
+            "username": payload.username if payload.username is not None else current.get("username", "friend"),
+            "theme": payload.theme if payload.theme is not None else current.get("theme", "light"),
+            "settings": payload.settings if payload.settings is not None else current.get("settings") or {},
+        }
+        supabase_db("POST", "profiles", json_data=updated, prefer="resolution=merge-duplicates,return=minimal")
+        return {"id": user_id, **updated}
+    except Exception:
+        logger.exception("Failed to update profile for user %s", user_id)
+        return {"id": user_id, "username": payload.username or "friend", "theme": payload.theme or "light", "settings": payload.settings or {}}
 
 
 def download_audio(url: str) -> str:

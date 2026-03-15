@@ -1,4 +1,4 @@
-// AUTH DISABLED: import { ensureValidSession } from "./auth";
+import { ensureValidSession } from "./auth";
 
 const apiBase = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 let backendPathsPromise: Promise<Set<string>> | null = null;
@@ -14,7 +14,7 @@ const getBackendPaths = async (): Promise<Set<string>> => {
         const data = (await response.json()) as { paths?: Record<string, unknown> };
         return new Set(Object.keys(data.paths ?? {}));
       })
-      .catch(() => new Set<string>());
+      .catch(() => { backendPathsPromise = null; return new Set<string>(); });
   }
 
   return backendPathsPromise;
@@ -29,12 +29,13 @@ export const apiFetch = async <T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> => {
-  // AUTH DISABLED: session not required; restore auth header when Supabase is connected
+  const session = await ensureValidSession();
   const isFormData = init.body instanceof FormData;
   const response = await fetch(`${apiBase}${path}`, {
     ...init,
     headers: {
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
+      ...(session ? { Authorization: `Bearer ${session.accessToken}` } : {}),
       ...(init.headers ?? {}),
     },
   });

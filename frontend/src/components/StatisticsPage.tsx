@@ -69,7 +69,7 @@ export default function StatisticsPage({ history, onClearHistory }: StatisticsPa
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="font-semibold text-[#1C1B18]">Statistics</h1>
+          <h1 className="font-bold text-[#1C1B18]">Statistics</h1>
           <p className="mt-0.5 text-sm text-[#7A7570]">
             {totalSessions} session{totalSessions !== 1 ? "s" : ""} across{" "}
             {byVideo.size} video{byVideo.size !== 1 ? "s" : ""}
@@ -98,7 +98,7 @@ export default function StatisticsPage({ history, onClearHistory }: StatisticsPa
       {/* Score trend chart */}
       {chronological.length >= 2 && (
         <div className="rounded-2xl border border-[#E2E0DB] bg-white p-6 shadow-sm">
-          <h2 className="font-semibold text-[#1C1B18]">Score over time</h2>
+          <h2 className="font-bold text-[#1C1B18]">Score over time</h2>
           <p className="mt-0.5 text-sm text-[#7A7570]">
             Each bar is one completed session, oldest to newest
           </p>
@@ -120,7 +120,7 @@ export default function StatisticsPage({ history, onClearHistory }: StatisticsPa
                   <div className="flex h-full w-full items-end">
                     <div
                       className={`w-full rounded-t-md transition-all ${
-                        isGood ? "bg-[#2D6A4F]" : "bg-[#D4500A]"
+                        isGood ? "bg-[#2D6A4F]" : "bg-[#3A6EAE]"
                       }`}
                       style={{ height: `${pct}%` }}
                     />
@@ -140,7 +140,7 @@ export default function StatisticsPage({ history, onClearHistory }: StatisticsPa
               ≥ 70%
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#D4500A]" />
+              <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#3A6EAE]" />
               &lt; 70%
             </span>
           </div>
@@ -149,7 +149,7 @@ export default function StatisticsPage({ history, onClearHistory }: StatisticsPa
 
       {/* Per-video breakdown */}
       <div className="rounded-2xl border border-[#E2E0DB] bg-white p-6 shadow-sm">
-        <h2 className="font-semibold text-[#1C1B18]">By video</h2>
+        <h2 className="font-bold text-[#1C1B18]">By video</h2>
         <p className="mt-0.5 text-sm text-[#7A7570]">
           Best score and attempts for each video
         </p>
@@ -173,7 +173,7 @@ export default function StatisticsPage({ history, onClearHistory }: StatisticsPa
                           key={r.id}
                           title={`${r.percentage}%`}
                           className={`h-2 w-2 rounded-full ${
-                            r.percentage >= 70 ? "bg-[#2D6A4F]" : "bg-[#D4500A]"
+                            r.percentage >= 70 ? "bg-[#2D6A4F]" : "bg-[#3A6EAE]"
                           }`}
                         />
                       ))}
@@ -183,7 +183,7 @@ export default function StatisticsPage({ history, onClearHistory }: StatisticsPa
                     className={`rounded-md px-2.5 py-1 text-sm font-semibold ${
                       group.best >= 70
                         ? "bg-[#F0FFF6] text-[#2D6A4F]"
-                        : "bg-[#FFF5F0] text-[#D4500A]"
+                        : "bg-[#EEF4FF] text-[#3A6EAE]"
                     }`}
                   >
                     {group.best}%
@@ -191,10 +191,10 @@ export default function StatisticsPage({ history, onClearHistory }: StatisticsPa
                 </div>
               </div>
               {/* Score bar */}
-              <div className="mt-2 h-1 w-full rounded-full bg-[#F7F6F2]">
+              <div className="mt-2 h-1 w-full rounded-full bg-[#F4F6FA]">
                 <div
                   className={`h-1 rounded-full transition-all ${
-                    group.best >= 70 ? "bg-[#2D6A4F]" : "bg-[#D4500A]"
+                    group.best >= 70 ? "bg-[#2D6A4F]" : "bg-[#3A6EAE]"
                   }`}
                   style={{ width: `${group.best}%` }}
                 />
@@ -206,7 +206,7 @@ export default function StatisticsPage({ history, onClearHistory }: StatisticsPa
 
       {/* Full session log */}
       <div className="rounded-2xl border border-[#E2E0DB] bg-white p-6 shadow-sm">
-        <h2 className="font-semibold text-[#1C1B18]">Session log</h2>
+        <h2 className="font-bold text-[#1C1B18]">Session log</h2>
         <p className="mt-0.5 text-sm text-[#7A7570]">Every completed session, newest first</p>
         <div className="mt-5 overflow-x-auto">
           <table className="min-w-full text-left text-sm">
@@ -235,7 +235,7 @@ export default function StatisticsPage({ history, onClearHistory }: StatisticsPa
                       className={`rounded-md px-2 py-0.5 text-xs font-semibold ${
                         record.percentage >= 70
                           ? "bg-[#F0FFF6] text-[#2D6A4F]"
-                          : "bg-[#FFF5F0] text-[#D4500A]"
+                          : "bg-[#EEF4FF] text-[#3A6EAE]"
                       }`}
                     >
                       {record.percentage}%

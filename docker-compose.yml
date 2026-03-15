@@ -7,10 +7,23 @@ services:
       - .env
     volumes:
       - ./backend/downloads:/app/downloads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL}
+        VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY}
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_AUTH_REDIRECT_URL: ${VITE_AUTH_REDIRECT_URL:-}
     ports:
       - "80:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy

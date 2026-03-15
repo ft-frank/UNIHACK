@@ -4,6 +4,7 @@ fastapi==0.135.1
 httpx==0.28.1
 pydantic==2.12.5
 python-dotenv==1.2.2
+python-multipart==0.0.20
 requests==2.32.5
 uvicorn==0.41.0
 watchfiles==1.1.1

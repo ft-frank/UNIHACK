@@ -63,7 +63,7 @@ type ConfettiPiece = {
 };
 
 const POLL_INTERVAL_MS = 1500;
-const CONFETTI_COLORS = ["#D4500A", "#F4A261", "#2D6A4F", "#52B788", "#1C1B18", "#7A7570"];
+const CONFETTI_COLORS = ["#3A6EAE", "#F4A261", "#2D6A4F", "#52B788", "#1C1B18", "#7A7570"];
 
 const defaultSettings: UserSettings = {
   type: "Cochlear",
@@ -239,15 +239,19 @@ export default function App() {
   const handleVideoComplete = useCallback(async () => {
     if (hasRecordedCompletionRef.current || !videoId) return;
     hasRecordedCompletionRef.current = true;
-    const nextHistory = await saveScoreRecord({
-      videoId,
-      videoName: videoTitleRef.current || `Media ${videoId}`,
-      completedAt: new Date().toISOString(),
-      score: scoreRef.current,
-      totalQuestions: questionsRef.current.length,
-    });
-    setVideoTitle(videoTitleRef.current);
-    setHistory(nextHistory);
+    try {
+      const nextHistory = await saveScoreRecord({
+        videoId,
+        videoName: videoTitleRef.current || `Media ${videoId}`,
+        completedAt: new Date().toISOString(),
+        score: scoreRef.current,
+        totalQuestions: questionsRef.current.length,
+      });
+      setVideoTitle(videoTitleRef.current);
+      setHistory(nextHistory);
+    } catch (err) {
+      console.error("Failed to save session:", err);
+    }
   }, [videoId]);
 
   // --- Init ---
@@ -257,9 +261,7 @@ export default function App() {
       tag.src = "https://www.youtube.com/iframe_api";
       document.body.appendChild(tag);
     }
-    // AUTH DISABLED: skip session check, load account data as guest
-    // Restore: ensureValidSession().then(async (s) => { setSession(s); if (s) await loadAccountData(s); }).finally(() => setAuthReady(true));
-    loadAccountData(null).catch(console.error).finally(() => setAuthReady(true));
+    ensureValidSession().then(async (s) => { setSession(s); if (s) await loadAccountData(s); }).finally(() => setAuthReady(true));
   }, [loadAccountData]);
 
   useEffect(() => {
@@ -278,8 +280,7 @@ export default function App() {
   }, [currentQuestion]);
 
   useEffect(() => {
-    // AUTH DISABLED: save profile without session guard
-    if (authReady) {
+    if (authReady && session) {
       const id = window.setTimeout(() => {
         saveProfileSafely({ username, settings }).catch(console.error);
       }, 250);
@@ -605,14 +606,22 @@ export default function App() {
 
   // --- Auth gates ---
   if (!authReady) {
-    return <div className="min-h-screen bg-[#F7F6F2]" />;
+    return <div className="min-h-screen bg-[#F4F6FA]" />;
   }
 
-  // AUTH DISABLED: skip login/landing gate; restore block above when Supabase is connected
+  if (!session) {
+    return (
+      <AuthPanel
+        onSignIn={handleSignIn}
+        onSignUp={handleSignUp}
+        initialMode={authView === "signup" ? "signup" : "signin"}
+      />
+    );
+  }
 
   // --- Main app ---
   return (
-    <div className="min-h-screen bg-[#F7F6F2] font-sans text-[#1C1B18]">
+    <div className="min-h-screen bg-[#F4F6FA] font-sans text-[#1C1B18]">
 
       {/* Confetti overlay */}
       <div className="pointer-events-none fixed inset-0 z-[70] overflow-hidden">
@@ -641,7 +650,7 @@ export default function App() {
           {plantMinimized ? (
             <button
               onClick={() => setPlantMinimized(false)}
-              className="flex h-12 w-12 items-center justify-center rounded-full border border-[#E2E0DB] bg-white shadow-sm transition-colors hover:bg-[#F7F6F2]"
+              className="flex h-12 w-12 items-center justify-center rounded-full border border-[#E2E0DB] bg-white shadow-sm transition-colors hover:bg-[#F4F6FA]"
               title="Open growth buddy"
             >
               <span className="text-xl">🪴</span>
@@ -649,7 +658,7 @@ export default function App() {
           ) : (
             <div className="w-64 overflow-hidden rounded-2xl border border-[#E2E0DB] bg-white shadow-sm">
               <div className="flex items-center justify-between border-b border-[#E2E0DB] px-4 py-3">
-                <p className="text-sm font-semibold text-[#1C1B18]">Growth buddy 🪴</p>
+                <p className="text-sm font-bold text-[#1C1B18]">Growth buddy 🪴</p>
                 <button
                   onClick={() => setPlantMinimized(true)}
                   className="p-1 text-[#B8B5AF] transition-colors hover:text-[#1C1B18]"
@@ -669,7 +678,7 @@ export default function App() {
                   {/* Ground */}
                   <div className="absolute bottom-0 left-0 right-0 h-8 rounded-b-xl bg-[#2D6A4F]/20" />
                   {/* Pot */}
-                  <div className="absolute bottom-5 left-1/2 h-8 w-12 -translate-x-1/2 rounded-sm bg-[#D4500A]/60" />
+                  <div className="absolute bottom-5 left-1/2 h-8 w-12 -translate-x-1/2 rounded-sm bg-[#8B5E3C]/70" />
                   {/* Stem */}
                   {plantStage > 0 && (
                     <div
@@ -692,7 +701,7 @@ export default function App() {
                   )}
                   {plantStage >= 7 && (
                     <div
-                      className="absolute left-1/2 h-5 w-5 -translate-x-1/2 rounded-full bg-[#D4500A]"
+                      className="absolute left-1/2 h-5 w-5 -translate-x-1/2 rounded-full bg-[#FFB830]"
                       style={{ bottom: `${52 + plantStage * 8}px` }}
                     />
                   )}
@@ -714,7 +723,7 @@ export default function App() {
       {/* Hamburger */}
       <button
         onClick={() => setIsNavOpen(true)}
-        className="fixed left-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-[#E2E0DB] bg-white shadow-sm transition-colors hover:bg-[#F7F6F2]"
+        className="fixed left-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-[#E2E0DB] bg-white shadow-sm transition-colors hover:bg-[#F4F6FA]"
         aria-label="Open navigation"
       >
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="h-5 w-5">
@@ -751,10 +760,10 @@ export default function App() {
         </nav>
 
         <div className="mt-auto">
-          <p className="mb-4 text-sm text-white/40">
-            <span className="text-xl font-semibold text-white">{history.length}</span>{" "}
-            saved {history.length === 1 ? "session" : "sessions"}
-          </p>
+          <div className="mb-4">
+            <span className="block text-4xl font-bold text-white">{history.length}</span>
+            <span className="text-sm text-white/40">saved {history.length === 1 ? "session" : "sessions"}</span>
+          </div>
           <button
             onClick={handleSignOut}
             className="w-full rounded-lg border border-white/10 px-3 py-2.5 text-left text-sm font-medium text-white/50 transition-colors hover:bg-white/5 hover:text-white"
@@ -773,7 +782,7 @@ export default function App() {
 
       {/* Header */}
       <header className="flex items-center justify-between border-b border-[#E2E0DB] px-20 py-4">
-        <h1 className="text-[0.95rem] font-semibold text-[#1C1B18]">
+        <h1 className="text-base font-bold text-[#1C1B18]">
           {activePage === "dashboard" ? "Interactive Quiz" : activePage === "statistics" ? "Performance" : "Past Attempts"}
         </h1>
         <button
@@ -796,7 +805,7 @@ export default function App() {
                 value={urlInput}
                 onChange={(e) => { setUrlInput(e.target.value); if (e.target.value) setSelectedFile(null); }}
                 placeholder="https://www.youtube.com/watch?v=…"
-                className="w-full max-w-sm rounded-lg border border-[#E2E0DB] bg-white px-4 py-2.5 text-sm text-[#1C1B18] placeholder-[#B8B5AF] focus:border-[#D4500A] focus:outline-none focus:ring-2 focus:ring-[#D4500A]/20"
+                className="w-full max-w-sm rounded-lg border border-[#E2E0DB] bg-white px-4 py-2.5 text-sm text-[#1C1B18] placeholder-[#B8B5AF] focus:border-[#3A6EAE] focus:outline-none focus:ring-2 focus:ring-[#3A6EAE]/20"
               />
 
               <span className="text-xs text-[#B8B5AF]">or</span>
@@ -805,10 +814,10 @@ export default function App() {
               <label
                 className={`relative flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2.5 text-sm transition-colors ${
                   selectedFile
-                    ? "border-[#D4500A]/40 bg-[#FFF4EF] text-[#D4500A]"
+                    ? "border-[#3A6EAE]/40 bg-[#EEF4FF] text-[#3A6EAE]"
                     : isDragOver
-                    ? "border-[#D4500A] bg-[#FFF4EF] text-[#D4500A]"
-                    : "border-dashed border-[#D4D2CC] bg-white text-[#7A7570] hover:border-[#D4500A] hover:text-[#D4500A]"
+                    ? "border-[#3A6EAE] bg-[#EEF4FF] text-[#3A6EAE]"
+                    : "border-dashed border-[#D4D2CC] bg-white text-[#7A7570] hover:border-[#3A6EAE] hover:text-[#3A6EAE]"
                 }`}
                 onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
                 onDragLeave={() => setIsDragOver(false)}
@@ -847,7 +856,7 @@ export default function App() {
               <button
                 type="submit"
                 disabled={loading}
-                className="rounded-lg bg-[#D4500A] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#B83D07] disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg bg-[#3A6EAE] px-7 py-3 text-sm font-bold text-white transition-colors hover:bg-[#2C5A93] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading ? "Generating…" : "Load"}
               </button>
@@ -864,9 +873,9 @@ export default function App() {
                 ) : videoId ? (
                   <>
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                      <h2 className="font-semibold text-[#1C1B18]">{videoTitle || "Loading…"}</h2>
-                      <span className="text-sm font-medium text-[#7A7570]">
-                        Score: {score} / {questionsRef.current.length || "—"}
+                      <h2 className="font-bold text-[#1C1B18]">{videoTitle || "Loading…"}</h2>
+                      <span className={`text-sm font-bold transition-colors ${answeredCount > 0 ? "text-[#3A6EAE]" : "text-[#B8B5AF]"}`}>
+                        Score: {score} / {answeredCount || "—"}
                       </span>
                     </div>
                     {mediaKind === "youtube" ? (
@@ -874,7 +883,7 @@ export default function App() {
                         <div id="yt-player" className="absolute inset-0" />
                       </div>
                     ) : mediaKind === "audio-upload" ? (
-                      <div className="flex aspect-video flex-col items-center justify-center gap-4 rounded-xl border border-[#E2E0DB] bg-[#F7F6F2]">
+                      <div className="flex aspect-video flex-col items-center justify-center gap-4 rounded-xl border border-[#E2E0DB] bg-[#F4F6FA]">
                         <p className="font-medium text-[#1C1B18]">{uploadedMedia?.title}</p>
                         <audio
                           ref={(el) => { mediaElementRef.current = el; }}
@@ -895,10 +904,15 @@ export default function App() {
                     )}
                   </>
                 ) : (
-                  <div className="flex aspect-video items-center justify-center rounded-xl border-2 border-dashed border-[#D4D2CC] bg-[#F7F6F2]">
-                    <p className="text-sm text-[#B8B5AF]">
-                      {pendingVideoId ? "Preparing video…" : "Load a video to get started"}
-                    </p>
+                  <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-[#D4D2CC] bg-[#F4F6FA]">
+                    {pendingVideoId ? (
+                      <p className="text-sm text-[#B8B5AF]">Preparing video…</p>
+                    ) : (
+                      <>
+                        <p className="font-display text-3xl italic text-[#C8CDD6]">paste a link. start listening.</p>
+                        <p className="text-sm text-[#D4D2CC]">Questions appear at the right moments.</p>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -912,14 +926,14 @@ export default function App() {
             {/* Quiz column */}
             <div className="flex w-full flex-col lg:col-span-4">
               <div className="mb-4">
-                <h2 className="font-semibold text-[#1C1B18]">Quiz</h2>
+                <h2 className="text-xl font-bold text-[#1C1B18]">Quiz</h2>
                 <p className="mt-0.5 text-sm text-[#7A7570]">Answer questions as they appear.</p>
               </div>
 
-              <div className="flex min-h-[220px] flex-col rounded-2xl border border-[#E2E0DB] bg-white p-6 shadow-sm">
+              <div className={`flex min-h-[220px] flex-col rounded-2xl border bg-white p-6 shadow-sm transition-all ${currentQuestion ? "border-t-[3px] border-t-[#3A6EAE] border-x-[#E2E0DB] border-b-[#E2E0DB]" : "border-[#E2E0DB]"}`}>
                 {currentQuestion ? (
                   <div className="flex flex-col gap-4">
-                    <h3 className="mb-2 text-center font-display text-lg italic leading-snug text-[#1C1B18]">
+                    <h3 className="mb-2 text-center font-display text-xl italic leading-snug text-[#1C1B18]">
                       {getQuestionPrompt(currentQuestion)}
                     </h3>
 
@@ -947,7 +961,7 @@ export default function App() {
                     ) : currentQuestion.kind === "multiple-choice" ? (
                       <div className="flex flex-col gap-2">
                         {feedback && (
-                          <p className={`mb-1 text-center text-sm font-medium ${questionPhase === "awaiting-hint" ? "text-[#B8620A]" : "text-[#7A7570]"}`}>
+                          <p className={`mb-1 text-center text-sm font-medium ${questionPhase === "awaiting-hint" ? "text-[#2C5A93]" : "text-[#7A7570]"}`}>
                             {feedback}
                           </p>
                         )}
@@ -956,7 +970,7 @@ export default function App() {
                             key={i}
                             onClick={(e) => handleAnswerClick(i, e)}
                             disabled={questionPhase === "awaiting-hint" || questionPhase === "replaying-hint"}
-                            className="w-full rounded-lg border border-[#E2E0DB] bg-white px-4 py-2.5 text-left text-sm font-medium text-[#1C1B18] transition-all hover:border-[#D4500A] hover:bg-[#FFF5F0] disabled:cursor-not-allowed disabled:opacity-40"
+                            className="w-full rounded-lg border border-[#E2E0DB] bg-white px-4 py-2.5 text-left text-sm font-medium text-[#1C1B18] transition-all hover:border-[#3A6EAE] hover:bg-[#EEF4FF] disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             {choice}
                           </button>
@@ -967,7 +981,7 @@ export default function App() {
                       /* Fill-in-the-blanks */
                       <form onSubmit={handleBlankSubmit} className="flex flex-col gap-3">
                         {feedback && (
-                          <p className={`text-center text-sm font-medium ${questionPhase === "awaiting-hint" ? "text-[#B8620A]" : "text-[#7A7570]"}`}>
+                          <p className={`text-center text-sm font-medium ${questionPhase === "awaiting-hint" ? "text-[#2C5A93]" : "text-[#7A7570]"}`}>
                             {feedback}
                           </p>
                         )}
@@ -980,7 +994,7 @@ export default function App() {
                                   value={blankAnswers[i] ?? ""}
                                   onChange={(e) => setBlankAnswers((prev) => prev.map((v, idx) => idx === i ? e.target.value : v))}
                                   disabled={questionPhase === "awaiting-hint" || questionPhase === "replaying-hint"}
-                                  className="mx-1 inline-block w-24 rounded border border-[#E2E0DB] px-2 py-0.5 text-sm text-[#1C1B18] focus:border-[#D4500A] focus:outline-none"
+                                  className="mx-1 inline-block w-24 rounded border border-[#E2E0DB] px-2 py-0.5 text-sm text-[#1C1B18] focus:border-[#3A6EAE] focus:outline-none"
                                   placeholder="…"
                                 />
                               )}
@@ -990,7 +1004,7 @@ export default function App() {
                         <button
                           type="submit"
                           disabled={questionPhase === "awaiting-hint" || questionPhase === "replaying-hint"}
-                          className="rounded-lg bg-[#D4500A] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#B83D07] disabled:cursor-not-allowed disabled:opacity-40"
+                          className="rounded-lg bg-[#3A6EAE] px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-[#2C5A93] disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Submit
                         </button>
@@ -1010,9 +1024,9 @@ export default function App() {
               </div>
 
               <div className="mt-5 rounded-2xl border border-[#E2E0DB] bg-white p-5 shadow-sm">
-                <p className="mb-4 text-sm font-semibold text-[#1C1B18]">Session</p>
+                <p className="mb-4 text-sm font-bold text-[#1C1B18]">Session</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <SnapshotCard label="Accuracy" value={answeredCount > 0 ? `${currentAccuracy}%` : "—"} />
+                  <SnapshotCard label="Accuracy" value={answeredCount > 0 ? `${currentAccuracy}% (${score}/${answeredCount})` : "—"} />
                   <SnapshotCard label="Sessions" value={`${history.length}`} />
                 </div>
               </div>
@@ -1055,7 +1069,7 @@ function GenerationPanel({ progress, stage }: { progress: number; stage: string 
         </div>
         <div className="w-full max-w-sm">
           <div className="h-px bg-white/10">
-            <div className="h-px bg-[#D4500A] transition-[width] duration-500" style={{ width: `${progress}%` }} />
+            <div className="h-px bg-[#3A6EAE] transition-[width] duration-500" style={{ width: `${progress}%` }} />
           </div>
           <p className="mt-2 text-right text-xs text-white/25">{progress}%</p>
         </div>
@@ -1074,7 +1088,7 @@ function HintRow({ hintUsed, questionPhase, onHint }: { hintUsed: boolean; quest
         type="button"
         onClick={onHint}
         disabled={hintUsed || questionPhase === "replaying-hint"}
-        className="flex items-center gap-1.5 rounded-md border border-[#E2E0DB] px-3 py-1.5 text-xs font-semibold text-[#7A7570] transition-colors hover:border-[#D4500A] hover:text-[#D4500A] disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex items-center gap-1.5 rounded-md border border-[#E2E0DB] px-3 py-1.5 text-xs font-semibold text-[#7A7570] transition-colors hover:border-[#3A6EAE] hover:text-[#3A6EAE] disabled:cursor-not-allowed disabled:opacity-40"
       >
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
           <path fillRule="evenodd" d="M7.793 2.232a.75.75 0 0 1-.025 1.06L3.622 7.25h10.003a5.375 5.375 0 0 1 0 10.75H10.75a.75.75 0 0 1 0-1.5h2.875a3.875 3.875 0 0 0 0-7.75H3.622l4.146 3.957a.75.75 0 0 1-1.036 1.085l-5.5-5.25a.75.75 0 0 1 0-1.085l5.5-5.25a.75.75 0 0 1 1.06.025Z" clipRule="evenodd" />
@@ -1089,7 +1103,7 @@ function NavButton({ label, active, onClick }: { label: string; active: boolean;
   return (
     <button
       onClick={onClick}
-      className={`w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all ${active ? "bg-[#D4500A] text-white" : "text-white/50 hover:bg-white/5 hover:text-white"}`}
+      className={`w-full rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all ${active ? "bg-[#3A6EAE] text-white" : "text-white/50 hover:bg-white/5 hover:text-white"}`}
     >
       {label}
     </button>
@@ -1098,9 +1112,9 @@ function NavButton({ label, active, onClick }: { label: string; active: boolean;
 
 function SnapshotCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-[#E2E0DB] bg-[#F7F6F2] p-3">
+    <div className="rounded-xl border border-[#E2E0DB] bg-[#F4F6FA] p-3">
       <p className="text-xs text-[#7A7570]">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-[#1C1B18]">{value}</p>
+      <p className="mt-1 text-2xl font-bold text-[#1C1B18]">{value}</p>
     </div>
   );
 }
