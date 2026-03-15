@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import type { VideoScoreRecord } from "../lib/scoreHistory";
+import {
+  clearPhoneticErrors,
+  getPhoneticErrorSummary,
+  type PhoneticErrorSummaryEntry,
+} from "../lib/phoneticErrors";
 
 type UserProgress = {
   userId: string;
@@ -48,12 +53,18 @@ const proficiencyMeta: Record<string, { bg: string; text: string; bar: string }>
 export default function StatisticsPage({ history, onClearHistory, onRefresh, isLoading }: StatisticsPageProps) {
   const [userProgress, setUserProgress] = useState<UserProgress | null>(null);
   const [progressLoading, setProgressLoading] = useState(true);
+  const [phoneticSummary, setPhoneticSummary] = useState<PhoneticErrorSummaryEntry[]>([]);
 
   useEffect(() => {
     apiFetch<UserProgress>("/progress")
       .then(setUserProgress)
       .catch(() => {})
       .finally(() => setProgressLoading(false));
+  }, []);
+
+  // Reload phonetic summary from localStorage whenever the component is shown
+  useEffect(() => {
+    setPhoneticSummary(getPhoneticErrorSummary());
   }, []);
 
   const level = userProgress?.proficiencyLevel ?? "Beginner";
@@ -394,6 +405,17 @@ export default function StatisticsPage({ history, onClearHistory, onRefresh, isL
         </div>
       )}
 
+      {/* Phonetic error breakdown (localStorage) */}
+      {phoneticSummary.length > 0 && (
+        <PhoneticBreakdown
+          summary={phoneticSummary}
+          onClear={() => {
+            clearPhoneticErrors();
+            setPhoneticSummary([]);
+          }}
+        />
+      )}
+
       {/* Full session log */}
       {history.length > 0 && (
         <div className="rounded-2xl border border-[#E2E0DB] bg-white p-6 shadow-sm">
@@ -457,6 +479,78 @@ function SummaryCard({
       <p className="text-xs text-[#7A7570]">{label}</p>
       <p className="mt-2 text-3xl font-semibold text-[#1C1B18]">{value}</p>
       {sub && <p className="mt-1 truncate text-xs text-[#B8B5AF]">{sub}</p>}
+    </div>
+  );
+}
+
+function PhoneticBreakdown({
+  summary,
+  onClear,
+}: {
+  summary: PhoneticErrorSummaryEntry[];
+  onClear: () => void;
+}) {
+  const maxCount = Math.max(...summary.map((e) => e.count), 1);
+  const total = summary.reduce((s, e) => s + e.count, 0);
+
+  return (
+    <div className="rounded-2xl border border-[#E2E0DB] bg-white p-6 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="font-bold text-[#1C1B18]">Phonetic Sound Struggles</h2>
+          <p className="mt-0.5 text-sm text-[#7A7570]">
+            Cochlear mode — wrong answers by sound category ({total} total error{total !== 1 ? "s" : ""})
+          </p>
+        </div>
+        <button
+          onClick={onClear}
+          className="shrink-0 rounded-lg border border-[#E2E0DB] px-3 py-1.5 text-xs font-medium text-[#C13030] transition-colors hover:border-[#C13030]/30 hover:bg-[#FFF0F0]"
+        >
+          Clear
+        </button>
+      </div>
+
+      <div className="mt-5 space-y-3">
+        {summary.map((entry) => {
+          const pct = Math.round((entry.count / total) * 100);
+          const barWidth = (entry.count / maxCount) * 100;
+          return (
+            <div key={entry.category}>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="font-medium text-[#1C1B18]">
+                  {formatCategory(entry.category)}
+                </span>
+                <span className="text-xs text-[#7A7570]">
+                  {entry.count} error{entry.count !== 1 ? "s" : ""} · {pct}%
+                </span>
+              </div>
+              <div className="mt-1.5 h-2.5 w-full rounded-full bg-[#F4F6FA]">
+                <div
+                  className="h-2.5 rounded-full bg-[#C13030]/70 transition-all"
+                  style={{ width: `${barWidth}%` }}
+                />
+              </div>
+              {entry.words.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {entry.words.slice(0, 8).map((w) => (
+                    <span
+                      key={w}
+                      className="rounded-full bg-[#FFF0F0] px-2 py-0.5 text-xs text-[#C13030]"
+                    >
+                      {w}
+                    </span>
+                  ))}
+                  {entry.words.length > 8 && (
+                    <span className="rounded-full bg-[#F4F6FA] px-2 py-0.5 text-xs text-[#B8B5AF]">
+                      +{entry.words.length - 8} more
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

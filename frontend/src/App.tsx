@@ -18,6 +18,7 @@ import {
   type SignUpResult,
 } from "./lib/auth";
 import { apiFetch, backendHasPath } from "./lib/api";
+import { recordPhoneticError } from "./lib/phoneticErrors";
 import type { Question, QuestionsJob, MultipleChoiceQuestion, FillInTheBlanksQuestion } from "./questions";
 import {
   createQuestionsJob,
@@ -107,6 +108,7 @@ export default function App() {
   const [videoTitle, setVideoTitle] = useState("");
   const [mediaKind, setMediaKind] = useState<MediaKind>("youtube");
   const [uploadedMedia, setUploadedMedia] = useState<UploadedMedia | null>(null);
+  const [generatedQuestions, setGeneratedQuestions] = useState<Question[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [blankAnswers, setBlankAnswers] = useState<string[]>([]);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -185,8 +187,9 @@ export default function App() {
     intervalRef.current = window.setInterval(() => {
       const t = getCurrentTime();
       if (t === null || hintReplayActiveRef.current) return;
+      const tMs = Math.round(t * 1000);
       const q = questionsRef.current.find(
-        (e) => t >= e.timestamp && t < e.timestamp + 1 && !processedRef.current.includes(e.timestamp)
+        (e) => tMs >= (e.timestamp + 1) * 1000 && tMs < (e.timestamp + 2) * 1000 && !processedRef.current.includes(e.timestamp)
       );
       if (q) {
         processedRef.current.push(q.timestamp);
@@ -372,6 +375,9 @@ export default function App() {
       getQuestionPrompt(q), selected, formatQuestionAnswer(q),
       q.word, q.phoneticCategory
     ).catch(console.error);
+    if (!isCorrect && settings.type === "Cochlear") {
+      recordPhoneticError(q.phoneticCategory ?? "General", q.word);
+    }
   };
 
   const scheduleContinue = () => {
@@ -557,6 +563,7 @@ export default function App() {
 
       const questions = await waitForQuestions(jobId);
       questionsRef.current = questions;
+      setGeneratedQuestions(questions);
       setGenerationProgress(100);
       setGenerationStage("Complete");
       setPendingVideoId("");
@@ -916,6 +923,16 @@ export default function App() {
                         />
                       </div>
                     )}
+                  {generatedQuestions.length > 0 && (
+                    <details className="mt-4 rounded-xl border border-[#E2E0DB] bg-[#F4F6FA]">
+                      <summary className="cursor-pointer select-none px-4 py-2.5 text-xs font-medium text-[#7A7570] hover:text-[#1C1B18]">
+                        [Demo] {generatedQuestions.length} generated question{generatedQuestions.length !== 1 ? "s" : ""} — click to expand JSON
+                      </summary>
+                      <pre className="overflow-x-auto p-4 text-[11px] leading-relaxed text-[#1C1B18]">
+                        {JSON.stringify(generatedQuestions, null, 2)}
+                      </pre>
+                    </details>
+                  )}
                   </>
                 ) : (
                   <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed border-[#D4D2CC] bg-[#F4F6FA]">
