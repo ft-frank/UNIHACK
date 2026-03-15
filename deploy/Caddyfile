@@ -1,0 +1,9 @@
+{$FRONTEND_DOMAIN} {
+    encode gzip zstd
+    reverse_proxy frontend:80
+}
+
+{$BACKEND_DOMAIN} {
+    encode gzip zstd
+    reverse_proxy backend:8000
+}

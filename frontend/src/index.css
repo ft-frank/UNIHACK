@@ -72,6 +72,55 @@
   animation: pulse-glow 2.8s ease-in-out infinite;
 }
 
+@keyframes drift {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(38px) scale(0.965);
+  filter: blur(10px);
+  transition:
+    opacity 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 700ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 700ms ease;
+  will-change: transform, opacity, filter;
+}
+
+.scroll-reveal[data-visible="true"] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+}
+
+.scroll-float {
+  animation: drift 5.6s ease-in-out infinite;
+}
+
+.scroll-depth-card {
+  transform-style: preserve-3d;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal,
+  .scroll-reveal[data-visible="true"] {
+    opacity: 1;
+    transform: none;
+    filter: none;
+    transition: none;
+  }
+
+  .scroll-float {
+    animation: none;
+  }
+}
+
 @keyframes popup-overlay-in {
   0% {
     opacity: 0;

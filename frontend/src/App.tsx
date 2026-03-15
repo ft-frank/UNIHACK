@@ -72,6 +72,11 @@ const CONFETTI_COLORS = [
   "#f472b6",
   "#a78bfa",
 ];
+const PLANT_ICON_SIZE = 56;
+const PLANT_PANEL_MAX_WIDTH = 290;
+const PLANT_WIDGET_MARGIN = 8;
+const PLANT_WIDGET_TOP_OFFSET = 88;
+const PLANT_PANEL_FALLBACK_HEIGHT = 420;
 
 type ConfettiPiece = {
   id: number;
@@ -152,7 +157,6 @@ export default function App() {
   const [isNavOpen, setIsNavOpen] = useState(false);
   const [urlInput, setUrlInput] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedFilePreviewUrl, setSelectedFilePreviewUrl] = useState<string | null>(null);
   const [videoId, setVideoId] = useState("");
   const [pendingVideoId, setPendingVideoId] = useState("");
   const [videoTitle, setVideoTitle] = useState("");
@@ -179,8 +183,8 @@ export default function App() {
     getTimeOfDayGreeting(new Date())
   );
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [isPlantWidgetMinimized, setIsPlantWidgetMinimized] = useState(false);
-  const [plantIconPosition, setPlantIconPosition] = useState({ x: 0, y: 180 });
+  const [isPlantWidgetMinimized, setIsPlantWidgetMinimized] = useState(true);
+  const [plantWidgetPosition, setPlantWidgetPosition] = useState({ x: 0, y: 180 });
   const [settings, setSettings] = useState<UserSettings>(defaultSettings);
 
   const playerRef = useRef<YouTubePlayer | null>(null);
@@ -201,6 +205,47 @@ export default function App() {
   const confettiIdRef = useRef(0);
   const draggingPlantIconRef = useRef(false);
   const plantDragOffsetRef = useRef({ x: 0, y: 0 });
+  const plantWidgetRef = useRef<HTMLDivElement | null>(null);
+
+  const getPlantPanelBounds = useCallback(() => {
+    const panelWidth =
+      plantWidgetRef.current?.offsetWidth ??
+      Math.min(PLANT_PANEL_MAX_WIDTH, window.innerWidth - PLANT_WIDGET_MARGIN * 2);
+    const panelHeight =
+      plantWidgetRef.current?.offsetHeight ?? PLANT_PANEL_FALLBACK_HEIGHT;
+
+    return {
+      minX: PLANT_WIDGET_MARGIN,
+      maxX: Math.max(window.innerWidth - panelWidth - PLANT_WIDGET_MARGIN, PLANT_WIDGET_MARGIN),
+      minY: PLANT_WIDGET_TOP_OFFSET,
+      maxY: Math.max(
+        window.innerHeight - panelHeight - PLANT_WIDGET_MARGIN,
+        PLANT_WIDGET_TOP_OFFSET
+      ),
+    };
+  }, []);
+
+  const clampPlantIconPosition = useCallback((x: number, y: number) => ({
+    x: Math.min(
+      Math.max(x, PLANT_WIDGET_MARGIN),
+      Math.max(window.innerWidth - PLANT_ICON_SIZE - PLANT_WIDGET_MARGIN, PLANT_WIDGET_MARGIN)
+    ),
+    y: Math.min(
+      Math.max(y, PLANT_WIDGET_TOP_OFFSET),
+      Math.max(window.innerHeight - PLANT_ICON_SIZE - PLANT_WIDGET_MARGIN, PLANT_WIDGET_TOP_OFFSET)
+    ),
+  }), []);
+
+  const clampPlantPanelPosition = useCallback(
+    (x: number, y: number) => {
+      const bounds = getPlantPanelBounds();
+      return {
+        x: Math.min(Math.max(x, bounds.minX), bounds.maxX),
+        y: Math.min(Math.max(y, bounds.minY), bounds.maxY),
+      };
+    },
+    [getPlantPanelBounds]
+  );
 
   const loadAccountData = useCallback(async (activeSession?: AuthSession | null) => {
     const hasProfilePath = await backendHasPath("/profile");
@@ -406,16 +451,28 @@ export default function App() {
 
   useEffect(() => {
     const setDefaultPlantPosition = () => {
-      setPlantIconPosition({
-        x: Math.max(window.innerWidth - 88, 0),
-        y: Math.max(Math.round(window.innerHeight * 0.35), 120),
+      setPlantWidgetPosition((current) => {
+        if (current.x !== 0 || current.y !== 180) {
+          return isPlantWidgetMinimized
+            ? clampPlantIconPosition(current.x, current.y)
+            : clampPlantPanelPosition(current.x, current.y);
+        }
+
+        const defaultPosition = {
+          x: Math.max(window.innerWidth - 88, 0),
+          y: Math.max(window.innerHeight - 96, PLANT_WIDGET_TOP_OFFSET),
+        };
+
+        return isPlantWidgetMinimized
+          ? clampPlantIconPosition(defaultPosition.x, defaultPosition.y)
+          : clampPlantPanelPosition(defaultPosition.x, defaultPosition.y);
       });
     };
 
     setDefaultPlantPosition();
     window.addEventListener("resize", setDefaultPlantPosition);
     return () => window.removeEventListener("resize", setDefaultPlantPosition);
-  }, []);
+  }, [clampPlantIconPosition, clampPlantPanelPosition, isPlantWidgetMinimized]);
 
   useEffect(() => {
     videoTitleRef.current = videoTitle;
@@ -429,28 +486,6 @@ export default function App() {
         : []
     );
   }, [currentQuestion]);
-
-  useEffect(() => {
-    if (!selectedFile) {
-      setSelectedFilePreviewUrl((current) => {
-        if (current) {
-          URL.revokeObjectURL(current);
-        }
-        return null;
-      });
-      return;
-    }
-
-    const objectUrl = URL.createObjectURL(selectedFile);
-    setSelectedFilePreviewUrl((current) => {
-      if (current) {
-        URL.revokeObjectURL(current);
-      }
-      return objectUrl;
-    });
-
-    return () => URL.revokeObjectURL(objectUrl);
-  }, [selectedFile]);
 
   useEffect(() => {
     return () => {
@@ -834,21 +869,18 @@ export default function App() {
   ) => {
     draggingPlantIconRef.current = false;
     plantDragOffsetRef.current = {
-      x: event.clientX - plantIconPosition.x,
-      y: event.clientY - plantIconPosition.y,
+      x: event.clientX - plantWidgetPosition.x,
+      y: event.clientY - plantWidgetPosition.y,
     };
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       draggingPlantIconRef.current = true;
-      const nextX = Math.min(
-        Math.max(moveEvent.clientX - plantDragOffsetRef.current.x, 8),
-        window.innerWidth - 72
+      setPlantWidgetPosition(
+        clampPlantIconPosition(
+          moveEvent.clientX - plantDragOffsetRef.current.x,
+          moveEvent.clientY - plantDragOffsetRef.current.y
+        )
       );
-      const nextY = Math.min(
-        Math.max(moveEvent.clientY - plantDragOffsetRef.current.y, 88),
-        window.innerHeight - 72
-      );
-      setPlantIconPosition({ x: nextX, y: nextY });
     };
 
     const handlePointerUp = () => {
@@ -857,6 +889,36 @@ export default function App() {
       window.setTimeout(() => {
         draggingPlantIconRef.current = false;
       }, 0);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+  };
+
+  const handlePlantWidgetPointerDown = (
+    event: React.PointerEvent<HTMLDivElement>
+  ) => {
+    if ((event.target as HTMLElement).closest("button")) {
+      return;
+    }
+
+    plantDragOffsetRef.current = {
+      x: event.clientX - plantWidgetPosition.x,
+      y: event.clientY - plantWidgetPosition.y,
+    };
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      setPlantWidgetPosition(
+        clampPlantPanelPosition(
+          moveEvent.clientX - plantDragOffsetRef.current.x,
+          moveEvent.clientY - plantDragOffsetRef.current.y
+        )
+      );
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -1035,14 +1097,20 @@ export default function App() {
         <>
           {!isPlantWidgetMinimized ? (
             <div
-              className={`animate-popup-panel-in fixed bottom-4 right-4 z-[75] w-[calc(100vw-2rem)] max-w-[290px] overflow-hidden rounded-[24px] border shadow-[0_24px_60px_rgba(15,23,42,0.24)] sm:bottom-6 sm:right-6 sm:rounded-[28px] ${
+              ref={plantWidgetRef}
+              className={`animate-popup-panel-in fixed z-[75] w-[calc(100vw-2rem)] max-w-[290px] overflow-hidden rounded-[24px] border shadow-[0_24px_60px_rgba(15,23,42,0.24)] sm:rounded-[28px] ${
                 isDarkMode
                   ? "border-emerald-900/60 bg-slate-950/88 text-slate-100"
                   : "border-emerald-200 bg-white/92 text-slate-900"
               }`}
+              style={{
+                left: plantWidgetPosition.x,
+                top: plantWidgetPosition.y,
+              }}
             >
               <div
-                className={`relative overflow-hidden px-5 py-4 ${
+                onPointerDown={handlePlantWidgetPointerDown}
+                className={`relative cursor-move overflow-hidden px-5 py-4 ${
                   isDarkMode
                     ? "bg-[linear-gradient(180deg,_rgba(8,47,73,0.85),_rgba(5,46,22,0.8))]"
                     : "bg-[linear-gradient(180deg,_rgba(219,234,254,0.95),_rgba(220,252,231,0.95))]"
@@ -1119,6 +1187,9 @@ export default function App() {
               onPointerDown={handlePlantIconPointerDown}
               onClick={() => {
                 if (!draggingPlantIconRef.current) {
+                  setPlantWidgetPosition((current) =>
+                    clampPlantPanelPosition(current.x, current.y)
+                  );
                   setIsPlantWidgetMinimized(false);
                 }
               }}
@@ -1128,8 +1199,8 @@ export default function App() {
                   : "border-emerald-200 bg-white text-emerald-700"
               }`}
               style={{
-                left: plantIconPosition.x,
-                top: plantIconPosition.y,
+                left: plantWidgetPosition.x,
+                top: plantWidgetPosition.y,
               }}
               aria-label="Open growth buddy"
             >
@@ -1353,9 +1424,16 @@ export default function App() {
           >
             <form
               onSubmit={handleLoadVideo}
-              className="mx-auto grid max-w-[1600px] gap-3 sm:gap-4 lg:grid-cols-[minmax(0,0.5fr)_auto_auto] lg:items-center"
+              className="mx-auto grid max-w-[1600px] gap-3 sm:gap-4 lg:grid-cols-[auto_minmax(0,1fr)_auto_auto] lg:items-center"
             >
-              <div className="flex w-full flex-col gap-3 sm:flex-row lg:min-w-0">
+              <button
+                type="submit"
+                disabled={loading}
+                className="animate-pulse-glow rounded-2xl bg-[#0b0f19] px-6 py-3 text-sm font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 justify-self-start"
+              >
+                {loading ? "Generating..." : "Load Video"}
+              </button>
+              <div className="flex w-full lg:min-w-0">
                 <input
                   value={urlInput}
                   onChange={(event) => setUrlInput(event.target.value)}
@@ -1366,13 +1444,6 @@ export default function App() {
                       : "border-slate-200 bg-white/90 text-slate-800 focus:bg-white"
                   }`}
                 />
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="animate-pulse-glow rounded-2xl bg-[#0b0f19] px-6 py-3 text-sm font-semibold text-white transition-all duration-300 hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 sm:self-start lg:shrink-0"
-                >
-                  {loading ? "Generating..." : "Load Video"}
-                </button>
               </div>
               <label className={`flex cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed px-4 py-3 text-sm font-semibold shadow-sm transition ${isDarkMode ? "border-sky-700 bg-slate-900/80 text-slate-100 hover:border-sky-500 hover:bg-slate-900" : "border-sky-400 bg-white/95 text-slate-800 hover:border-sky-600 hover:bg-white"}`}>
                 <input
@@ -1481,33 +1552,27 @@ export default function App() {
                   </>
                 ) : (
                   <div className={`flex aspect-video items-center justify-center rounded-[24px] border-2 border-dashed ${isDarkMode ? "border-slate-700 bg-slate-900/60" : "border-slate-200 bg-slate-50"}`}>
-                    {selectedFile && selectedFilePreviewUrl ? (
-                      selectedFile.type.startsWith("audio/") ? (
-                        <div className="flex w-full max-w-2xl flex-col items-center px-6 text-center">
-                          <div className="mb-6 flex w-full items-end justify-center gap-2">
-                            {Array.from({ length: 24 }, (_, index) => (
-                              <span
-                                key={index}
-                                className={`w-2 rounded-full ${isDarkMode ? "bg-cyan-300/80" : "bg-sky-500/70"}`}
-                                style={{ height: `${18 + ((index * 13) % 56)}px` }}
-                              />
-                            ))}
-                          </div>
-                          <p className={`text-xs font-semibold uppercase tracking-[0.28em] ${isDarkMode ? "text-cyan-300" : "text-sky-700"}`}>
-                            Ready to analyze
-                          </p>
-                          <h3 className={`mt-2 text-xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>
-                            {selectedFile.name}
-                          </h3>
-                          <audio className="mt-5 w-full max-w-xl" src={selectedFilePreviewUrl} controls />
+                    {selectedFile ? (
+                      <div className="flex w-full max-w-2xl flex-col items-center px-6 text-center">
+                        <div className="mb-6 flex w-full items-end justify-center gap-2">
+                          {Array.from({ length: 24 }, (_, index) => (
+                            <span
+                              key={index}
+                              className={`w-2 rounded-full ${isDarkMode ? "bg-cyan-300/80" : "bg-sky-500/70"}`}
+                              style={{ height: `${18 + ((index * 13) % 56)}px` }}
+                            />
+                          ))}
                         </div>
-                      ) : (
-                        <video
-                          className="h-full w-full object-contain"
-                          src={selectedFilePreviewUrl}
-                          controls
-                        />
-                      )
+                        <p className={`text-xs font-semibold uppercase tracking-[0.28em] ${isDarkMode ? "text-cyan-300" : "text-sky-700"}`}>
+                          File selected
+                        </p>
+                        <h3 className={`mt-2 text-xl font-bold ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                          {selectedFile.name}
+                        </h3>
+                        <p className={`mt-4 max-w-xl text-sm leading-7 ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+                          Press the <span className="font-semibold">Load Video</span> button to start processing and open the media player.
+                        </p>
+                      </div>
                     ) : (
                       <p className="font-medium text-slate-400">
                         {pendingVideoId
@@ -1849,7 +1914,7 @@ function SnapshotCard({
   );
 }
 
-function LandingPage({
+function LegacyLandingPage({
   isDarkMode,
   onSelectAuth,
 }: {
@@ -2036,6 +2101,348 @@ function LandingPage({
   );
 }
 
+void LegacyLandingPage;
+
+function ScrollReveal({
+  children,
+  className = "",
+  delay = 0,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  delay?: number;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setIsVisible(entry.isIntersecting);
+      },
+      {
+        threshold: 0.18,
+        rootMargin: "0px 0px -10% 0px",
+      }
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={containerRef}
+      data-visible={isVisible ? "true" : "false"}
+      className={`scroll-reveal ${className}`.trim()}
+      style={{ transitionDelay: `${delay}ms` }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function LandingPage({
+  isDarkMode,
+  onSelectAuth,
+}: {
+  isDarkMode: boolean;
+  onSelectAuth: (mode: "signin" | "signup") => void;
+}) {
+  const heroPills = ["Real video", "Live checkpoints", "Adaptive focus"];
+  const featureCards = [
+    {
+      eyebrow: "Less friction",
+      title: "Load. Listen. Respond.",
+      body: "No dead drills. No detached quiz sheet.",
+    },
+    {
+      eyebrow: "More signal",
+      title: "Questions hit on cue.",
+      body: "The pause lands when the moment matters.",
+    },
+    {
+      eyebrow: "Real adaptation",
+      title: "Weak spots stay in focus.",
+      body: "Mastered patterns fade into the background.",
+    },
+  ];
+
+  return (
+    <div className="relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0">
+        <div className={`absolute -left-20 top-16 h-72 w-72 rounded-full blur-3xl ${isDarkMode ? "bg-cyan-500/20" : "bg-sky-300/35"}`} />
+        <div className={`absolute right-[-6rem] top-40 h-96 w-96 rounded-full blur-3xl ${isDarkMode ? "bg-emerald-500/12" : "bg-emerald-200/60"}`} />
+        <div className={`absolute bottom-10 left-1/3 h-80 w-80 rounded-full blur-3xl ${isDarkMode ? "bg-orange-500/10" : "bg-amber-200/45"}`} />
+        <div className={`absolute inset-x-0 top-[32rem] h-px ${isDarkMode ? "bg-white/8" : "bg-slate-200/70"}`} />
+      </div>
+
+      <div className="sticky top-0 z-30 border-b border-white/10 bg-slate-950/45 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+          <div>
+            <p className={`text-xs font-semibold uppercase tracking-[0.34em] ${isDarkMode ? "text-cyan-300" : "text-sky-700"}`}>
+              Echolearn
+            </p>
+            <p className={`mt-1 text-sm ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+              Interactive listening practice for real-world media
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={() => onSelectAuth("signin")}
+              className={`rounded-full border px-4 py-2 text-sm font-semibold transition hover:-translate-y-0.5 ${
+                isDarkMode
+                  ? "border-slate-700 bg-slate-900/80 text-slate-100 hover:bg-slate-800"
+                  : "border-slate-200 bg-white/85 text-slate-700 hover:bg-white"
+              }`}
+            >
+              Sign in
+            </button>
+            <button
+              onClick={() => onSelectAuth("signup")}
+              className="rounded-full bg-[#0b0f19] px-4 py-2 text-sm font-semibold text-white shadow-[0_16px_36px_rgba(11,15,25,0.28)] transition hover:-translate-y-0.5 hover:bg-slate-800"
+            >
+              Create account
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <main className="mx-auto flex max-w-7xl flex-col gap-8 px-4 pb-16 pt-8 sm:px-6 sm:pb-24 sm:pt-10">
+        <section className="grid items-center gap-8 lg:grid-cols-[1.05fr_0.95fr] lg:gap-14">
+          <ScrollReveal className="lg:pr-4">
+            <p className={`text-sm font-semibold uppercase tracking-[0.28em] ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}>
+              Listening, redesigned
+            </p>
+            <h1 className={`mt-4 max-w-4xl text-4xl font-bold leading-[1.02] sm:text-5xl lg:text-7xl ${isDarkMode ? "text-white" : "text-slate-950"}`}>
+              Real video.
+              <br />
+              Sharper listening.
+              <br />
+              Smarter practice.
+            </h1>
+            <p className={`mt-6 max-w-xl text-base leading-7 sm:text-lg ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+              Turn everyday lessons into guided listening sessions.
+              Short pauses. Sharp questions. Personal feedback.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              {heroPills.map((pill, index) => (
+                <span
+                  key={pill}
+                  className={`scroll-float rounded-full border px-4 py-2 text-sm font-medium ${
+                    isDarkMode
+                      ? "border-slate-800 bg-slate-900/70 text-slate-200"
+                      : "border-slate-200 bg-white/85 text-slate-700"
+                  }`}
+                  style={{ animationDelay: `${index * 220}ms` }}
+                >
+                  {pill}
+                </span>
+              ))}
+            </div>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <button
+                onClick={() => onSelectAuth("signup")}
+                className="rounded-full bg-[#0b0f19] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(11,15,25,0.28)] transition hover:-translate-y-0.5 hover:bg-slate-800"
+              >
+                Start free
+              </button>
+              <button
+                onClick={() => onSelectAuth("signin")}
+                className={`rounded-full border px-5 py-3 text-sm font-semibold transition hover:-translate-y-0.5 ${
+                  isDarkMode
+                    ? "border-slate-700 bg-slate-900/80 text-slate-100 hover:bg-slate-800"
+                    : "border-slate-200 bg-white/85 text-slate-700 hover:bg-white"
+                }`}
+              >
+                See your progress
+              </button>
+            </div>
+            <div className="mt-10 grid max-w-2xl gap-3 sm:grid-cols-3">
+              <div className={`rounded-[24px] border px-4 py-4 ${isDarkMode ? "border-slate-800 bg-slate-900/65" : "border-slate-200 bg-white/80"}`}>
+                <p className={`text-xs font-semibold uppercase tracking-[0.24em] ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Modes</p>
+                <p className={`mt-2 text-2xl font-bold ${isDarkMode ? "text-cyan-300" : "text-sky-700"}`}>2</p>
+                <p className={`mt-1 text-sm ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>Lecture and cochlear.</p>
+              </div>
+              <div className={`rounded-[24px] border px-4 py-4 ${isDarkMode ? "border-slate-800 bg-slate-900/65" : "border-slate-200 bg-white/80"}`}>
+                <p className={`text-xs font-semibold uppercase tracking-[0.24em] ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Hints</p>
+                <p className={`mt-2 text-2xl font-bold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}>5s</p>
+                <p className={`mt-1 text-sm ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>Replay the exact moment.</p>
+              </div>
+              <div className={`rounded-[24px] border px-4 py-4 ${isDarkMode ? "border-slate-800 bg-slate-900/65" : "border-slate-200 bg-white/80"}`}>
+                <p className={`text-xs font-semibold uppercase tracking-[0.24em] ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>Memory</p>
+                <p className={`mt-2 text-2xl font-bold ${isDarkMode ? "text-amber-300" : "text-amber-700"}`}>Live</p>
+                <p className={`mt-1 text-sm ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>Future questions adapt.</p>
+              </div>
+            </div>
+          </ScrollReveal>
+
+          <ScrollReveal className="lg:pl-2" delay={120}>
+            <div
+              className={`scroll-depth-card relative overflow-hidden rounded-[36px] border p-4 shadow-[0_28px_80px_rgba(15,23,42,0.2)] ${
+                isDarkMode
+                  ? "border-slate-800 bg-slate-950/75"
+                  : "border-slate-200 bg-white/85"
+              }`}
+            >
+              <div className="absolute inset-0 bg-[linear-gradient(130deg,transparent,rgba(255,255,255,0.08),transparent)] animate-[shimmer-slide_3.8s_linear_infinite]" />
+              <div className={`absolute left-4 top-4 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] backdrop-blur ${
+                isDarkMode
+                  ? "border-cyan-500/20 bg-slate-900/70 text-cyan-300"
+                  : "border-sky-200 bg-white/80 text-sky-700"
+              }`}>
+                Scroll. Pause. Improve.
+              </div>
+              <div className="relative overflow-hidden rounded-[24px]">
+                <img
+                  src={heroImage}
+                  alt="Echolearn product preview"
+                  className="h-[250px] w-full object-cover sm:h-[340px] lg:h-[420px]"
+                />
+              </div>
+              <div className="pointer-events-none absolute inset-x-6 top-[5.25rem] hidden justify-between sm:flex">
+                <div className={`scroll-float rounded-[20px] border px-4 py-3 shadow-xl backdrop-blur ${
+                  isDarkMode
+                    ? "border-white/10 bg-slate-900/75 text-slate-100"
+                    : "border-white/80 bg-white/80 text-slate-900"
+                }`}>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-500">Checkpoint</p>
+                  <p className="mt-2 text-sm font-semibold">Catch the phrase.</p>
+                </div>
+                <div className={`scroll-float rounded-[20px] border px-4 py-3 shadow-xl backdrop-blur ${
+                  isDarkMode
+                    ? "border-white/10 bg-slate-900/75 text-slate-100"
+                    : "border-white/80 bg-white/80 text-slate-900"
+                }`} style={{ animationDelay: "520ms" }}>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-500">Adaptive</p>
+                  <p className="mt-2 text-sm font-semibold">Weak spots stay hot.</p>
+                </div>
+              </div>
+              <div className="relative mt-4 grid gap-3 sm:grid-cols-3">
+                <ProductStat
+                  isDarkMode={isDarkMode}
+                  label="Focus"
+                  value="Precise"
+                  detail="Train what matters."
+                />
+                <ProductStat
+                  isDarkMode={isDarkMode}
+                  label="Flow"
+                  value="On cue"
+                  detail="Pause at the right time."
+                />
+                <ProductStat
+                  isDarkMode={isDarkMode}
+                  label="Memory"
+                  value="Adaptive"
+                  detail="The system learns your patterns."
+                />
+              </div>
+            </div>
+          </ScrollReveal>
+        </section>
+
+        <section className="grid gap-6 lg:grid-cols-3">
+          {featureCards.map((card, index) => (
+            <ScrollReveal key={card.title} delay={index * 120}>
+              <StoryCard
+                isDarkMode={isDarkMode}
+                eyebrow={card.eyebrow}
+                title={card.title}
+                body={card.body}
+              />
+            </ScrollReveal>
+          ))}
+        </section>
+
+        <ScrollReveal>
+          <section
+            className={`grid gap-6 overflow-hidden rounded-[40px] border p-6 sm:p-8 lg:grid-cols-[0.9fr_1.1fr] ${
+              isDarkMode
+                ? "border-slate-800 bg-[linear-gradient(135deg,rgba(2,6,23,0.95),rgba(15,23,42,0.92),rgba(8,47,73,0.78))]"
+                : "border-slate-200 bg-[linear-gradient(135deg,rgba(255,255,255,0.95),rgba(239,246,255,0.94),rgba(236,253,245,0.9))]"
+            }`}
+          >
+            <div className="lg:sticky lg:top-28 lg:self-start">
+              <p className={`text-sm font-semibold uppercase tracking-[0.28em] ${isDarkMode ? "text-cyan-300" : "text-sky-700"}`}>
+                What it feels like
+              </p>
+              <h2 className={`mt-3 text-3xl font-bold sm:text-4xl ${isDarkMode ? "text-white" : "text-slate-950"}`}>
+                Fast.
+                <br />
+                Focused.
+                <br />
+                Addictive.
+              </h2>
+              <p className={`mt-4 max-w-md text-base leading-7 ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+                You stay inside the video.
+                The system handles the coaching.
+              </p>
+            </div>
+            <div className="grid gap-4">
+              <ScrollReveal delay={40}>
+                <StepCard
+                  isDarkMode={isDarkMode}
+                  number="01"
+                  title="Bring any lesson in"
+                  body="Paste a link. Or drop a file."
+                />
+              </ScrollReveal>
+              <ScrollReveal delay={120}>
+                <StepCard
+                  isDarkMode={isDarkMode}
+                  number="02"
+                  title="Catch the exact moment"
+                  body="The player pauses when the idea lands."
+                />
+              </ScrollReveal>
+              <ScrollReveal delay={200}>
+                <StepCard
+                  isDarkMode={isDarkMode}
+                  number="03"
+                  title="Train the pattern"
+                  body="Hard words repeat more. Mastered ones step back."
+                />
+              </ScrollReveal>
+            </div>
+          </section>
+        </ScrollReveal>
+
+        <ScrollReveal>
+          <section
+            className={`relative overflow-hidden rounded-[40px] border p-6 sm:p-8 ${
+              isDarkMode
+                ? "border-slate-800 bg-slate-950/75"
+                : "border-slate-200 bg-white/88"
+            }`}
+          >
+            <div className={`absolute inset-0 opacity-70 ${isDarkMode ? "bg-[radial-gradient(circle_at_top_right,_rgba(45,212,191,0.16),_transparent_35%),radial-gradient(circle_at_bottom_left,_rgba(56,189,248,0.18),_transparent_40%)]" : "bg-[radial-gradient(circle_at_top_right,_rgba(52,211,153,0.18),_transparent_35%),radial-gradient(circle_at_bottom_left,_rgba(125,211,252,0.24),_transparent_40%)]"}`} />
+            <div className="relative grid gap-5 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
+              <div>
+                <p className={`text-sm font-semibold uppercase tracking-[0.28em] ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}>
+                  Why it sticks
+                </p>
+                <h2 className={`mt-3 text-3xl font-bold sm:text-4xl ${isDarkMode ? "text-white" : "text-slate-950"}`}>
+                  Less reading.
+                  <br />
+                  More listening.
+                </h2>
+              </div>
+              <p className={`max-w-xl text-base leading-7 lg:justify-self-end ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+                Every session leaves a trace.
+                The next one gets better.
+              </p>
+            </div>
+          </section>
+        </ScrollReveal>
+      </main>
+    </div>
+  );
+}
+
 function StoryCard({
   isDarkMode,
   eyebrow,
@@ -2049,7 +2456,7 @@ function StoryCard({
 }) {
   return (
     <article
-      className={`animate-fade-up rounded-[30px] border p-6 shadow-[0_22px_60px_rgba(15,23,42,0.08)] ${
+      className={`group rounded-[30px] border p-6 shadow-[0_22px_60px_rgba(15,23,42,0.08)] transition duration-500 hover:-translate-y-1 hover:shadow-[0_28px_80px_rgba(15,23,42,0.14)] ${
         isDarkMode
           ? "border-slate-800 bg-slate-900/75 text-slate-100"
           : "border-slate-200 bg-white/85 text-slate-900"
@@ -2079,7 +2486,7 @@ function StepCard({
 }) {
   return (
     <div
-      className={`rounded-[24px] border p-5 ${
+      className={`rounded-[24px] border p-5 transition duration-500 hover:-translate-y-1 ${
         isDarkMode
           ? "border-white/10 bg-white/5 text-slate-100"
           : "border-white/60 bg-white/65 text-slate-900"
@@ -2109,7 +2516,7 @@ function ProductStat({
 }) {
   return (
     <div
-      className={`rounded-[22px] border p-4 ${
+      className={`rounded-[22px] border p-4 transition duration-500 hover:-translate-y-1 ${
         isDarkMode
           ? "border-slate-800 bg-slate-900/80 text-slate-100"
           : "border-slate-200 bg-white/85 text-slate-900"

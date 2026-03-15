@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import uuid
 import shutil
 import logging
@@ -22,16 +23,26 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost",
+    "http://127.0.0.1",
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+]
+
+
+def get_cors_origins() -> list[str]:
+    raw = os.getenv("CORS_ORIGINS", "").strip()
+    if not raw:
+        return DEFAULT_CORS_ORIGINS
+
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost",
-        "http://127.0.0.1",
-        "http://localhost:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:5174",
-    ],
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -112,6 +123,15 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 jobs_lock = Lock()
 jobs: dict[str, dict[str, Any]] = {}
+
+GENERIC_FOCUS_TERMS = {
+    "true",
+    "false",
+    "yes",
+    "no",
+    "all of the above",
+    "none of the above",
+}
 
 
 def ensure_supabase_config() -> None:
@@ -239,6 +259,181 @@ def save_user_progress(progress: UserProgress):
     )
 
 
+def get_all_question_results(user_id: str) -> List[dict[str, Any]]:
+    return supabase_admin_request(
+        "GET",
+        "/rest/v1/question_results",
+        params={
+            "user_id": f"eq.{user_id}",
+            "select": "correct,word,correct_answer,phonetic_category,question_text,created_at",
+            "order": "created_at.asc",
+        },
+    ) or []
+
+
+def normalize_focus_label(value: Optional[str]) -> str:
+    if not value:
+        return ""
+
+    normalized = re.sub(r"\s+", " ", value.strip().lower())
+    normalized = normalized.strip(" ,.;:!?\"'")
+    return normalized[:120]
+
+
+def extract_focus_label(result: dict[str, Any]) -> str:
+    word = normalize_focus_label(result.get("word"))
+    if word:
+        return word
+
+    answer = normalize_focus_label(result.get("correct_answer"))
+    if not answer or answer in GENERIC_FOCUS_TERMS:
+        return ""
+
+    if len(answer.split()) > 8:
+        return ""
+
+    return answer
+
+
+def update_performance_bucket(
+    stats: dict[str, dict[str, float]],
+    label: str,
+    is_correct: bool,
+) -> None:
+    if not label:
+        return
+
+    bucket = stats.setdefault(label, {"attempts": 0, "correct": 0})
+    bucket["attempts"] += 1
+    if is_correct:
+        bucket["correct"] += 1
+
+
+def summarize_performance_bucket(
+    stats: dict[str, dict[str, float]],
+    *,
+    weaker_threshold: float,
+    stronger_threshold: float,
+    min_attempts_for_strength: int,
+    limit: int = 5,
+) -> dict[str, list[dict[str, float | str]]]:
+    weaknesses: list[dict[str, float | str]] = []
+    strengths: list[dict[str, float | str]] = []
+
+    for label, values in stats.items():
+        attempts = int(values["attempts"])
+        correct = int(values["correct"])
+        accuracy = correct / attempts if attempts else 0.0
+        wrong = attempts - correct
+        item: dict[str, float | str] = {
+            "label": label,
+            "attempts": attempts,
+            "correct": correct,
+            "wrong": wrong,
+            "accuracy": round(accuracy, 3),
+        }
+
+        if wrong > 0 and accuracy <= weaker_threshold:
+            weaknesses.append(item)
+
+        if attempts >= min_attempts_for_strength and accuracy >= stronger_threshold:
+            strengths.append(item)
+
+    weaknesses.sort(key=lambda item: (item["accuracy"], -item["attempts"], -item["wrong"]))  # type: ignore[index]
+    strengths.sort(key=lambda item: (-item["accuracy"], -item["attempts"], item["label"]))  # type: ignore[index]
+
+    return {
+        "weaknesses": weaknesses[:limit],
+        "strengths": strengths[:limit],
+    }
+
+
+def build_adaptive_learning_profile(user_id: str) -> dict[str, Any]:
+    results = get_all_question_results(user_id)
+    category_stats: dict[str, dict[str, float]] = {}
+    focus_stats: dict[str, dict[str, float]] = {}
+
+    for result in results:
+        is_correct = bool(result.get("correct"))
+        category = normalize_focus_label(result.get("phonetic_category"))
+        focus_label = extract_focus_label(result)
+
+        update_performance_bucket(category_stats, category, is_correct)
+        update_performance_bucket(focus_stats, focus_label, is_correct)
+
+    category_summary = summarize_performance_bucket(
+        category_stats,
+        weaker_threshold=0.6,
+        stronger_threshold=0.85,
+        min_attempts_for_strength=3,
+    )
+    focus_summary = summarize_performance_bucket(
+        focus_stats,
+        weaker_threshold=0.65,
+        stronger_threshold=0.85,
+        min_attempts_for_strength=3,
+    )
+
+    total_attempts = len(results)
+    total_correct = sum(1 for result in results if result.get("correct"))
+
+    return {
+        "total_attempts": total_attempts,
+        "accuracy": round(total_correct / total_attempts, 3) if total_attempts else None,
+        "weak_categories": category_summary["weaknesses"],
+        "strong_categories": category_summary["strengths"],
+        "weak_focuses": focus_summary["weaknesses"],
+        "strong_focuses": focus_summary["strengths"],
+    }
+
+
+def format_adaptive_items(items: list[dict[str, float | str]]) -> str:
+    return ", ".join(
+        f"{item['label']} ({int(item['correct'])}/{int(item['attempts'])} correct)"
+        for item in items
+    )
+
+
+def build_adaptive_guidance(adaptive_profile: Optional[dict[str, Any]]) -> str:
+    if not adaptive_profile or not adaptive_profile.get("total_attempts"):
+        return ""
+
+    guidance_lines = ["Adaptive focus guidance from this user's past answers:"]
+
+    weak_categories = adaptive_profile.get("weak_categories") or []
+    weak_focuses = adaptive_profile.get("weak_focuses") or []
+    strong_categories = adaptive_profile.get("strong_categories") or []
+    strong_focuses = adaptive_profile.get("strong_focuses") or []
+    accuracy = adaptive_profile.get("accuracy")
+
+    if accuracy is not None:
+        guidance_lines.append(
+            f"- Historical accuracy across saved results: {round(float(accuracy) * 100)}%"
+        )
+
+    if weak_categories:
+        guidance_lines.append(
+            f"- Prioritise these harder categories more often: {format_adaptive_items(weak_categories)}"
+        )
+    if weak_focuses:
+        guidance_lines.append(
+            f"- Prioritise these harder words or phrases more often: {format_adaptive_items(weak_focuses)}"
+        )
+    if strong_categories:
+        guidance_lines.append(
+            f"- These categories look mostly mastered, so use them less often unless needed for variety: {format_adaptive_items(strong_categories)}"
+        )
+    if strong_focuses:
+        guidance_lines.append(
+            f"- These words or phrases look mostly mastered, so de-prioritise them in future questions: {format_adaptive_items(strong_focuses)}"
+        )
+
+    guidance_lines.append(
+        "- Use these trends as a bias, not a hard rule: still keep question sets varied and natural."
+    )
+    return "\n".join(guidance_lines)
+
+
 def save_question_result(user_id: str, result: QuestionResult):
     supabase_admin_request(
         "POST",
@@ -261,11 +456,25 @@ def save_question_result(user_id: str, result: QuestionResult):
     if result.correct:
         progress.correctAnswers += 1
 
-    if not result.correct and result.phoneticCategory:
-        progress.phoneticErrors[result.phoneticCategory] = progress.phoneticErrors.get(result.phoneticCategory, 0) + 1
+    if result.phoneticCategory:
+        category_count = progress.phoneticErrors.get(result.phoneticCategory, 0)
+        if result.correct:
+            if category_count <= 1:
+                progress.phoneticErrors.pop(result.phoneticCategory, None)
+            else:
+                progress.phoneticErrors[result.phoneticCategory] = category_count - 1
+        else:
+            progress.phoneticErrors[result.phoneticCategory] = category_count + 1
 
-    if not result.correct and result.word:
-        progress.wordErrors[result.word] = progress.wordErrors.get(result.word, 0) + 1
+    if result.word:
+        word_count = progress.wordErrors.get(result.word, 0)
+        if result.correct:
+            if word_count <= 1:
+                progress.wordErrors.pop(result.word, None)
+            else:
+                progress.wordErrors[result.word] = word_count - 1
+        else:
+            progress.wordErrors[result.word] = word_count + 1
 
     accuracy = progress.correctAnswers / progress.totalQuestions if progress.totalQuestions > 0 else 0
     if accuracy >= 0.8:
@@ -579,6 +788,7 @@ def generate_questions(
     specific_groups: str = "",
     specific_sounds: str = "",
     user_progress: Optional[UserProgress] = None,
+    adaptive_profile: Optional[dict[str, Any]] = None,
 ) -> list:
     duration_seconds = estimate_transcript_duration_seconds(transcript)
     num_questions = calculate_question_count(frequency)
@@ -591,6 +801,7 @@ def generate_questions(
         f"- Difficulty selected by the user: {difficulty}",
         f"- Question density preference: {frequency}",
         f"- Target question count from the user's frequency selection: {num_questions}",
+        f"- Assessment style: {cochlear_assessment_mode}",
     ]
 
     if quiz_type == "Cochlear":
@@ -606,6 +817,9 @@ def generate_questions(
         settings_summary.append(
             f"- User proficiency history for reference only: {user_progress.proficiencyLevel}"
         )
+    adaptive_guidance = build_adaptive_guidance(adaptive_profile)
+    if adaptive_guidance:
+        settings_summary.append(adaptive_guidance)
 
     settings_block = "\n".join(settings_summary)
 
@@ -622,6 +836,8 @@ def generate_questions(
             error_phonetics = sorted(user_progress.phoneticErrors.items(), key=lambda x: x[1], reverse=True)
             top_errors = [phonetic for phonetic, count in error_phonetics[:3]]
             extra_instructions.append(f"- HIGH PRIORITY: Focus on phonetics the user struggles with: {', '.join(top_errors)}")
+        if adaptive_guidance:
+            extra_instructions.append(f"- Follow this adaptive profile when selecting targets:\n{adaptive_guidance}")
         
         extra = "\n".join(extra_instructions)
 
@@ -727,7 +943,6 @@ Return ONLY a JSON array with this exact structure, no other text:
     "word": "<main target word or short phrase>"
 }}
 ]"""
-
     else:  # Lecture (default)
         prompt = f"""You are generating comprehension quiz questions for an interactive video lecture player.
 
@@ -738,27 +953,53 @@ Given this transcript (with timestamps in seconds) from a video that is about {d
 Use these quiz settings exactly:
 {settings_block}
 
-Generate {num_questions} multiple-choice questions spread throughout the video. Place each question shortly after the relevant topic has been fully explained — not mid-explanation.
+Generate exactly {num_questions} lecture questions spread throughout the video. Place each question shortly after the relevant topic has been fully explained - not mid-explanation.
+
+Question mix rules:
+- If assessment style is "multiple-choice", every question must be kind "multiple-choice".
+- If assessment style is "fill-in-the-blanks", every question must be kind "fill-in-the-blanks".
+- If assessment style is "both", return a balanced mix of both kinds across the full set.
+
+For "multiple-choice" questions:
+- Test understanding of a concept, fact, or idea from the lecture.
+- Have exactly 4 answer choices.
+- Have one clearly correct answer.
+
+For "fill-in-the-blanks" questions:
+- Use a short sentence summarizing an important point that was explicitly covered in the lecture.
+- Blank out {blank_count} important concept words or fewer if the sentence is too short.
+- Use markers [BLANK_1], [BLANK_2], and so on inside sentenceWithBlanks.
+- Return the original full sentence in promptSentence.
+- Return the correct missing words in order in the blanks array.
 
 Each question should:
 - Be appropriate for a {difficulty} level learner
-- Test understanding of a concept, fact, or idea from the lecture
-- Have exactly 4 answer choices
-- Have one clearly correct answer
 - Use a timestamp (in seconds) that is AFTER the topic was covered
+- Be fully answerable from the lecture content alone
+- Avoid trivia that was only mentioned in passing
+- Bias selection toward the user's weak areas and away from already-mastered words, phrases, or categories whenever the transcript allows it
 
 Return ONLY a JSON array with this exact structure, no other text:
 [
 {{
+    "kind": "multiple-choice",
     "timestamp": <integer seconds>,
     "question": "<question text>",
     "choices": ["<choice 0>", "<choice 1>", "<choice 2>", "<choice 3>"],
     "answerIndex": <0-3>
+}},
+{{
+    "kind": "fill-in-the-blanks",
+    "timestamp": <integer seconds>,
+    "question": "Fill in the missing words from the sentence.",
+    "sentenceWithBlanks": "<sentence with [BLANK_1], [BLANK_2], ... markers>",
+    "promptSentence": "<the full original sentence>",
+    "blanks": ["<correct word 1>", "<correct word 2>"]
 }}
 ]"""
 
     message = anthropic_client.messages.create(
-        model="claude-opus-4-6",
+        model="claude-sonnet-4-5",
         max_tokens=2048,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -830,6 +1071,7 @@ def run_generation_job(job_id: str, req: QuestionRequest, user_id: str) -> None:
             progress=80,
         )
         user_progress = get_user_progress(user_id)
+        adaptive_profile = build_adaptive_learning_profile(user_id)
         questions = generate_questions(
             transcript,
             req.type,
@@ -838,7 +1080,8 @@ def run_generation_job(job_id: str, req: QuestionRequest, user_id: str) -> None:
             req.cochlearAssessmentMode,
             req.specificGroups,
             req.specificSounds,
-            user_progress
+            user_progress,
+            adaptive_profile,
         )
 
         update_job(
@@ -887,6 +1130,7 @@ def run_uploaded_generation_job(
             progress=80,
         )
         user_progress = get_user_progress(user_id)
+        adaptive_profile = build_adaptive_learning_profile(user_id)
         questions = generate_questions(
             transcript,
             req.type,
@@ -896,6 +1140,7 @@ def run_uploaded_generation_job(
             req.specificGroups,
             req.specificSounds,
             user_progress,
+            adaptive_profile,
         )
 
         update_job(
@@ -937,6 +1182,7 @@ def get_questions(req: QuestionRequest, authorization: Optional[str] = Header(de
 
     try:
         user_progress = get_user_progress(user["id"])
+        adaptive_profile = build_adaptive_learning_profile(user["id"])
         questions = generate_questions(
             transcript,
             req.type,
@@ -946,6 +1192,7 @@ def get_questions(req: QuestionRequest, authorization: Optional[str] = Header(de
             req.specificGroups,
             req.specificSounds,
             user_progress,
+            adaptive_profile,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Question generation failed: {e}")

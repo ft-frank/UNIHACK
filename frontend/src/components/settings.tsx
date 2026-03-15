@@ -155,31 +155,33 @@ export default function Settings({
             </select>
           </div>
 
+          <div className="flex flex-col gap-1.5">
+            <label className={`text-sm font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>
+              Assessment Style
+            </label>
+            <select
+              value={localSettings.cochlearAssessmentMode}
+              onChange={(e) => handleChange("cochlearAssessmentMode", e.target.value)}
+              className={`w-full rounded-lg border px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-800 ${
+                isDarkMode
+                  ? "border-slate-700 bg-slate-800 text-slate-100 focus:bg-slate-800"
+                  : "border-gray-200 bg-gray-50 text-slate-700 focus:bg-white"
+              }`}
+            >
+              <option value="multiple-choice">Multiple choice</option>
+              <option value="fill-in-the-blanks">Fill in the blanks</option>
+              <option value="both">Both</option>
+            </select>
+            <p className={`mt-0.5 text-xs ${isDarkMode ? "text-slate-400" : "text-gray-400"}`}>
+              {isCochlear
+                ? "Choose whether cochlear practice uses recognition, recall, or a mix of both."
+                : "Choose whether lecture questions use multiple choice, fill in the blanks, or a balanced mix."}
+            </p>
+          </div>
+
           {/* Cochlear-only options */}
           {isCochlear && (
             <>
-              <div className="flex flex-col gap-1.5">
-                <label className={`text-sm font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>
-                  Assessment Style
-                </label>
-                <select
-                  value={localSettings.cochlearAssessmentMode}
-                  onChange={(e) => handleChange("cochlearAssessmentMode", e.target.value)}
-                  className={`w-full rounded-lg border px-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-slate-800 ${
-                    isDarkMode
-                      ? "border-slate-700 bg-slate-800 text-slate-100 focus:bg-slate-800"
-                      : "border-gray-200 bg-gray-50 text-slate-700 focus:bg-white"
-                  }`}
-                >
-                  <option value="multiple-choice">Multiple choice</option>
-                  <option value="fill-in-the-blanks">Fill in the blanks</option>
-                  <option value="both">Both</option>
-                </select>
-                <p className={`mt-0.5 text-xs ${isDarkMode ? "text-slate-400" : "text-gray-400"}`}>
-                  Choose whether cochlear practice uses recognition, recall, or a mix of both.
-                </p>
-              </div>
-
               {/* Specific Groups */}
               <div className="flex flex-col gap-1.5">
                 <label className={`text-sm font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>
